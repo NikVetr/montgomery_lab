@@ -6,6 +6,36 @@ library(MotrpacBicQC)
 enrich <- read.table("~/data/smontgom/pw-enrich-degs-per-tissue.tsv", sep = "\t", header = T)
 sapply(colnames(enrich), function(coli) length(unique(enrich[,coli])))
 
+#snag pathway categories
+url <- "https://www.genome.jp/kegg/pathway.html"
+html <- rvest::read_html(url)
+
+major_categories <- unlist(lapply(unlist(lapply(as.character(html_elements(html, "h4"))[-(1:2)], function(x) strsplit(x, "\\. ")[[1]][2])), function(x) strsplit(x, "<")[[1]][1]))
+
+categories <- as.character(html_elements(html, "b"))[10:68]
+categories <- unlist(lapply(categories, function(x) strsplit(x, ">")[[1]][2]))
+categories <- unlist(lapply(categories, function(x) strsplit(x, "<")[[1]][1]))
+categories <- data.frame(category_id = unlist(lapply(categories, function(x) strsplit(x, "\\.")[[1]][1])),
+                         subcategory_id = unlist(lapply(categories, function(x) strsplit(x, " ")[[1]][1])),
+                         subcategory_name = unlist(lapply(categories, function(x) paste0(strsplit(x, " ")[[1]][-1], collapse = " "))))
+categories$subcategory_id <- unlist(lapply(categories$subcategory_id, function(x) strsplit(x, "\\.")[[1]][2]))
+categories$category_name <- major_categories[as.integer(categories$category_id)]
+
+possible_pathways <- as.character(html_elements(html, "a"))
+possible_pathways <- unlist(lapply(possible_pathways, function(x) strsplit(x, ">")[[1]][2]))
+possible_pathways <- unlist(lapply(possible_pathways, function(x) strsplit(x, "<")[[1]][1]))
+possible_pathways <- possible_pathways[-(2:grep(pattern = "Metabolic pathways", possible_pathways)-1)]
+
+html_text <- unlist(strsplit(as.character(html), "\n"))
+pathway_locs <- as.integer(sapply(possible_pathways, function(x) grep(gsub("\\(", "\\\\(", x), html_text)[1]))
+category_locs <- as.integer(sapply(categories$name, function(x) grep(x, html_text)[1]))
+pathway_categories <- sapply(pathway_locs, function(x) max(which(x > (category_locs))))
+
+pathway_categories <- cbind(pathway = possible_pathways, do.call(rbind, lapply(pathway_categories, function(x) categories[x,])))
+head(pathway_categories)
+if(!file.exists("~/data/smontgom/motrpac_pathway_categories.txt")){data.table::fwrite(pathway_categories, file = "~/data/smontgom/motrpac_pathway_categories.txt")}
+pathway_categories <- data.table::fread(file = "~/data/smontgom/motrpac_pathway_categories.txt")
+
 #subset the enrichment table via significance filter
 pval_to_use <- "gost_adj_p_value"
 pval_thresh <- 0.1
@@ -474,6 +504,10 @@ my.text.panel <- function(labels) {
 
 var_lab <- paste0(round(MCAout$eig[,2]), "% of Variance")
 names(var_lab) <- letters[1:5]
+
+grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Pairs_Plot.pdf"), 
+                     width = 650 / 72, height = 550 / 72, family="Arial Unicode MS")
+
 pairs(MCAout$ind$coord, diag.panel = panel.1Dnames, tissue_names = rownames(MCAout$ind$coord), labels = letters[1:5],
       tissue_colors = cols$Tissue[match(rownames(MCAout$ind$coord), names(cols$Tissue))], 
       text.panel = my.text.panel(var_lab), pch = 19, cex = 1.5, 
@@ -486,6 +520,8 @@ rect(xpd = NA, col = cols$Tissue[-length(cols$Tissue)], border = NA,
      ytop = seq(yb, yt, length.out = length(cols$Tissue)-1) + (yt-yb)/(length(cols$Tissue) - 2)/2)
 text(labels = names(cols$Tissue[-length(cols$Tissue)]), seq(yb, yt, length.out = length(cols$Tissue)-1), pos = 2, x = (xl + xr) / 2, xpd = NA, cex = 0.5)
 text(0, 0.5, srt = 90,  xpd = NA, labels = "Multiple Coordinates Analysis (MCA)", cex = 1.2, font = 2)
+
+dev.off()
 
 var_lab <- paste0(tetra_propvar[1:5], "% of Variance")
 names(var_lab) <- letters[1:5]
@@ -522,9 +558,91 @@ text(0, 0.5, srt = 90,  xpd = NA, labels = "logistic PCA", cex = 1.2, font = 2)
 #look at loadings
 MCAout_zeros <- MCAout$var$contrib[grep(rownames(MCAout$var$contrib), pattern = "_0"),]
 MCAout_ones <- MCAout$var$contrib[grep(rownames(MCAout$var$contrib), pattern = "_1"),]
+
+grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis1.pdf"), 
+                     width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 1, top = 80, xtickslab.rt = 75)
-names(MCAout_ones[,1])[order(MCAout_ones[,1], decreasing = T)]
+dev.off()
+
+# names(MCAout_ones[,1])[order(MCAout_ones[,1], decreasing = T)]
+
+grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis2.pdf"), 
+                     width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 2, top = 80, xtickslab.rt = 76)
-names(MCAout_ones[,2])[order(MCAout_ones[,2], decreasing = T)]
+dev.off()
+
+# names(MCAout_ones[,2])[order(MCAout_ones[,2], decreasing = T)]
+
+grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis3.pdf"), 
+                     width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 3, top = 80, xtickslab.rt = 76)
-names(MCAout_ones[,3])[order(MCAout_ones[,3], decreasing = T)]
+dev.off()
+
+# names(MCAout_ones[,3])[order(MCAout_ones[,3], decreasing = T)]
+
+pathway_categories$pathway[grep(pathway_categories$pathway, pattern = "Chemical carcinogenesis")] <- "Chemical carcinogenesis"
+contrib <- data.frame(c1 = MCAout$var$contrib[,1], c2 = MCAout$var$contrib[,2], c3 = MCAout$var$contrib[,3])
+contrib$pathway <- rownames(contrib)
+contrib$pathway <- gsub("_1", "", contrib$pathway)
+contrib$pathway <- gsub("_0", "", contrib$pathway)
+contrib <- cbind(contrib, pathway_categories[match(contrib$pathway, pathway_categories$pathway),c("category_name", "subcategory_name")])
+unique_cats <- unique(contrib$category_name)
+unique_subcats <- unique(contrib$subcategory_name)
+
+#dimension 1
+library(wordcloud)
+round(sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c1"]))), T), 2)
+head(round(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c1"])), T), 2))
+
+dim1_catfreqs <- sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c1"]))), T)
+wordcloud(words = names(dim1_catfreqs), freq = dim1_catfreqs, min.freq = 0.01,
+          max.words=200, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+dim1_subcatfreqs <- sort(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c1"]))), T)
+wordcloud(words = names(dim1_subcatfreqs), freq = dim1_subcatfreqs, min.freq = 0.01,
+          max.words=200, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+
+#dimension 2
+round(sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c2"]))), T), 2)
+head(round(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c2"])), T), 2))
+
+dim2_catfreqs <- sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c2"]))), T)
+wordcloud(words = names(dim2_catfreqs), freq = dim2_catfreqs, min.freq = 0.01,
+          max.words=200, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+dim2_subcatfreqs <- sort(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c2"]))), T)
+wordcloud(words = names(dim2_subcatfreqs), freq = dim2_subcatfreqs, min.freq = 0.01,
+          max.words=200, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+
+#dimension 3
+round(sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c3"]))), T), 2)
+head(round(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c3"])), T), 2))
+
+
+dim3_catfreqs <- sort(sort(sapply(unique_cats, function(categ) sum(contrib[contrib$category_name == categ,"c3"]))), T)
+wordcloud(words = names(dim3_catfreqs), freq = dim3_catfreqs, min.freq = 0.01,
+          max.words=300, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+dim3_subcatfreqs <- sort(sort(sapply(unique_subcats, function(subcateg) sum(contrib[contrib$subcategory_name == subcateg,"c3"]))), T)
+wordcloud(words = names(dim3_subcatfreqs), freq = dim3_subcatfreqs, min.freq = 0.01,
+          max.words=300, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+
+
+
+sort(table(pathway_categories$category_name), T)
+head(sort(table(pathway_categories$subcategory_name), T))
+
+wordcloud(words = names(table(pathway_categories$category_name)), freq = table(pathway_categories$category_name), min.freq = 0.01,
+          max.words=300, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))
+wordcloud(words = names(table(pathway_categories$subcategory_name)), freq = table(pathway_categories$subcategory_name), min.freq = 0.01,
+          max.words=300, random.order=FALSE, rot.per=0,
+          colors=brewer.pal(8, "Dark2"))

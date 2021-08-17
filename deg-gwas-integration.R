@@ -1265,7 +1265,7 @@ if(plot_tissueEnvelope_figure){
 
 if(!file.exists('~/data/smontgom/coloc_list.RData')){
   coloc_list = list()
-  pp4_threshold <- 0.0001
+  pp4_threshold <- 0.01
   i = 1
   for(tissue in unname(motrpac_gtex_map)){
     # download all coloc results for this tissue 
@@ -2267,7 +2267,7 @@ if(plot_coloc_percentile_figure){
 
 #### DE / eQTL vs. PP4 figure ####
 
-pp4_threshold <- 0
+pp4_threshold <- 0.01
 if(!exists("coloc_list") & !exists("colocs")){
   load(paste0('~/data/smontgom/coloc_list_pp4threshold_', pp4_threshold,'.RData'))
   colocs <- coloc_list
@@ -5161,6 +5161,10 @@ gwas_summary_files <- list.files(gwas_dir)
 gwas_summary_files <- gwas_summary_files[-grep(gwas_summary_files, pattern = "README")]
 orig_clusters <- paste0("Cluster_", 1:15)
 new_clusters <- c("t53-cortex",  "t56-vastus-lateralis",  "t58-heart",  "t61-colon",  "t62-spleen",  "t64-ovaries",  "t65-aorta",  "t66-lung",  "t67-small-intestine",  "t69-brown-adipose",  "t70-white-adipose",  "t30-blood-rna",  "t52-hippocampus",  "t54-hypothalamus",  "t63-testes",  "t55-gastrocnemius",  "t60-adrenal",  "t59-kidney",  "t68-liver",  "1w",  "2w",  "4w",  "8w",  "female-1w",  "male-2w",  "female-4w",  "male-8w",  "all_DE")
+
+geneset_info <- expand.grid(c(7,15), c("t55-gastrocnemius", "t68-liver", "t58-heart"))
+new_clusters <- paste0("Cluster_", trimws(apply(geneset_info, 1, paste0, collapse = "-")), "")
+
 output_files <- c(sapply(c("_Cluster_Addenda.cell_type_results.txt", "_Cluster_1-15.cell_type_results.txt"), function(x) paste0(stringr::str_remove_all(gwas_summary_files, ".txt.gz"), x)))
 output_files <- paste0(stringr::str_remove_all(gwas_summary_files, ".txt.gz"), c("_Cluster_1-15.cell_type_results.txt"))
 output_files <- paste0(stringr::str_remove_all(gwas_summary_files, ".txt.gz"), c("_Cluster_Addenda.cell_type_results.txt"))
@@ -5170,11 +5174,23 @@ ldsc_results$twoTailedPVal <- ldsc_results$Coefficient_P_value
 ldsc_results$twoTailedPVal[ldsc_results$twoTailedPVal > 0.5] <- 1 - ldsc_results$twoTailedPVal[ldsc_results$twoTailedPVal > 0.5]
 ldsc_results$twoTailedPVal <- ldsc_results$twoTailedPVal * 2
 
-hist(log(ldsc_results$Coefficient_P_value))
+#filter by category
+trait_categories <- read.csv("~/data/smontgom/gwas_metadata.csv", header = T)
+traitwise_partitions <- trait_categories[,c("Tag", "Category")]
+ldsc_results$trait_name <- gsub(ldsc_results$trait, pattern = "imputed_", replacement = "")
+ldsc_results$trait_category <- traitwise_partitions$Category[match(ldsc_results$trait_name, traitwise_partitions$Tag)]
+ldsc_results <- ldsc_results[ldsc_results$trait_category %in% c("Cardiometabolic", "Aging", "Anthropometric", "Immune")]
+
+hist(log(ldsc_results$Coefficient_P_value), xlab = "log 1-tailed p-value", main = "", breaks = -200:0/10)
+abline(v = log(0.05 / nrow(ldsc_results)), col = 2, lwd = 4)
+text(x = log(0.05 / nrow(ldsc_results)), y = 200, 
+     labels = latex2exp::TeX("Bonferroni-adjusted $\\alpha$"), srt = 90, pos = 2)
+hist(ldsc_results$Coefficient_P_value)
+hist(log(ldsc_results$twoTailedPVal), breaks = -200:0/10)
 hist((ldsc_results$twoTailedPVal))
-hist(log(ldsc_results$twoTailedPVal))
 abline(v = log(0.05 / nrow(ldsc_results)), col = 2, lwd = 4)
 qvalue::pi0est(ldsc_results$Coefficient_P_value)
+qvalue::pi0est(ldsc_results$twoTailedPVal)
 sum(log(ldsc_results$Coefficient_P_value) < log(0.05 / nrow(ldsc_results)))
 head(ldsc_results[order(ldsc_results$Coefficient_P_value, decreasing = F),], 20)
 head(ldsc_results[order(ldsc_results$twoTailedPVal, decreasing = F),], 20)

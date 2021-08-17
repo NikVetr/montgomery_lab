@@ -19,7 +19,7 @@ rlkj <- function (K, eta = 1) {
   return(crossprod(R))
 }
 
-d <- 500
+d <- 10
 n <- 100
 FT_SE <- 1 / sqrt(n-3)
 zscore_thresh_2t <- abs(qnorm(0.025, 0, 1)) #for 2-tailed test

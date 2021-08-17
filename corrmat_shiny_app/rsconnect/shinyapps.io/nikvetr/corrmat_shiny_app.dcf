@@ -1,0 +1,13 @@
+name: corrmat_shiny_app
+title: corrmat_shiny_app
+username:
+account: nikvetr
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4401916
+bundleId: 4839441
+url: https://nikvetr.shinyapps.io/corrmat_shiny_app/
+when: 1626821981.38057
+lastSyncTime: 1626821981.38058
+asMultiple: FALSE
+asStatic: FALSE
