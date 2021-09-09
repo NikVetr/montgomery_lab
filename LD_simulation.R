@@ -171,7 +171,7 @@ causal_loci_2 <- sample(1:n_loci, size = n_causal_loci_2, replace = F)
 loci_effect_sizes_2 <- rep(0, n_loci)
 loci_effect_sizes_2[causal_loci_2] <- rnorm(n_causal_loci_2)
 genetic_values_2 <- sapply(1:n_indiv, function(indiv) sum(allele_counts[,indiv] * loci_effect_sizes_2))
-coef_2traits <- 1.3
+coef_2traits <- 2.3
 genetic_and_other_trait_values <- genetic_values_2 + phenotypic_values * coef_2traits
 heritability_2 <- 0.6
 residual_environmental_variance_trait2 <- ((var(genetic_values_2) + coef_2traits^2*var(genetic_values)) / heritability_2^2) - 
@@ -185,6 +185,6 @@ pvals_2[is.na(pvals_2)] <- 1
 effect_size_estimates_2 <- sapply(1:n_loci, function(locus) ifelse(nrow(fits_2[[locus]]) == 2, fits_2[[locus]]["allele_counts[locus, ]","Estimate"], NA))
 effect_size_estimates_2[is.na(effect_size_estimates_2)] <- 0
 plot(effect_size_estimates_2 ~ effect_size_estimates)
-lm(effect_size_estimates_2 ~ effect_size_estimates)
+summary(lm(effect_size_estimates_2 ~ effect_size_estimates))
 plot(diff(effect_size_estimates_2) ~ diff(effect_size_estimates))
-lm(diff(effect_size_estimates_2) ~ diff(effect_size_estimates))
+summary(lm(diff(effect_size_estimates_2) ~ diff(effect_size_estimates)))

@@ -5195,3 +5195,63 @@ sum(log(ldsc_results$Coefficient_P_value) < log(0.05 / nrow(ldsc_results)))
 head(ldsc_results[order(ldsc_results$Coefficient_P_value, decreasing = F),], 20)
 head(ldsc_results[order(ldsc_results$twoTailedPVal, decreasing = F),], 20)
 head(ldsc_results[order(ldsc_results$Coefficient, decreasing = T),], 20)
+
+#### TWAS results ####
+twas_tissues <- fread(file = "~/repos/fusion_twas-master/output/all_results.txt")
+metaxscan_results <- fread(file = "~/repos/MetaXcan/software/results/all_results.txt")
+motrpac_gtex_map = c('t30-blood-rna'='Whole_Blood',
+                     't52-hippocampus'='Brain_Hippocampus',
+                     't53-cortex'='Brain_Cortex',
+                     't54-hypothalamus'='Brain_Hypothalamus',
+                     't55-gastrocnemius'='Muscle_Skeletal',
+                     't56-vastus-lateralis'='Muscle_Skeletal',
+                     't58-heart'='Heart_Left_Ventricle',
+                     't59-kidney'='Kidney_Cortex',
+                     't60-adrenal'='Adrenal_Gland',
+                     't61-colon'='Colon_Transverse',
+                     't62-spleen'='Spleen',
+                     't63-testes'='Testis',
+                     't64-ovaries'='Ovary',
+                     't66-lung'='Lung',
+                     't67-small-intestine'='Small_Intestine_Terminal_Ileum',
+                     't68-liver'='Liver',
+                     't70-white-adipose'='Adipose_Subcutaneous')
+
+#compare twas to coloc results
+load('~/data/smontgom/coloc_list_pp4threshold_1e-04.RData')
+geneID_map <- read.table("~/data/smontgom/motrpac_geneID_map.txt")
+
+#whoops there is redundancy here
+tiss_gene_twas <- paste0(twas_tissues$tissue, "_", twas_tissues$ID) 
+tiss_gene_coloc <- paste0(coloc_list$motrpac_tissue, "_", coloc_list$gene_id) 
+
+for(i in 1:length(deg_eqtl_list)){
+  cat(paste0(i, " "))
+  temp <- deg_eqtl_list[[i]]
+  tiss_gene_twas_equiv <- paste0(motrpac_gtex_map[match(names(deg_eqtl_list)[i], names(motrpac_gtex_map))], "_", temp$gene_name)
+  tiss_gene_coloc_equiv <- paste0(names(deg_eqtl_list)[i], "_", temp$gene_id)
+  temp$TWAS_PVAL <- twas_tissues$TWAS.P[match(tiss_gene_twas_equiv, tiss_gene_twas)]
+  temp$colocPP4 <- coloc_list$p4[match(tiss_gene_coloc_equiv, tiss_gene_coloc)]
+  deg_eqtl_list[[i]] <- temp
+}
+
+twas_pvals <- (do.call(rbind,deg_eqtl_list)$TWAS_PVAL)
+coloc_pp4s <- (do.call(rbind,deg_eqtl_list)$colocPP4)
+plot(-log(twas_pvals), -log(1-coloc_pp4s))
+
+all_gene_names <- unique(map$human_gene_symbol)
+gene_names_DE <- unique(do.call(rbind, deg_eqtl_list)$gene_name)
+mean(!is.na(match(gene_names_DE, all_gene_names)))
+gene_names_TWAS <- unique(twas_tissues$ID)
+gene_names_metaxscan <- unique(metaxscan_results$gene_name)
+mean(!is.na(match(gene_names_TWAS, all_gene_names)))
+length(setdiff(gene_names_DE, gene_names_TWAS)) / length(gene_names_DE)
+sapply(names(deg_eqtl_list), function(i) mean(!is.na(deg_eqtl_list[[i]]$TWAS_PVAL))*100)
+twas_tissuegenes <- sapply(unique(twas_tissues$tissue), function(tiss) unique(twas_tissues$ID[twas_tissues$tissue == tiss]))
+sapply(twas_tissuegenes, function(x) length(x))
+length(setdiff(gene_names_DE, gene_names_metaxscan)) / length(gene_names_DE)
+length(setdiff(gene_names_DE, gene_names_metaxscan)) / length(gene_names_DE)
+gene_IDs_metaxscan <- unique(metaxscan_results$gene)
+gene_IDs_DE <- unique(do.call(rbind, deg_eqtl_list)$gene_id)
+length(setdiff(gene_names_DE, gene_names_metaxscan)) / length(gene_names_DE)
+length(setdiff(gene_IDs_DE, gene_IDs_metaxscan)) / length(gene_IDs_DE)

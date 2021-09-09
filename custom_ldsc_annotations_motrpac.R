@@ -657,7 +657,7 @@ for(cli in cluster_ids){
 names(DE_genes) <- cluster_ids
 str(DE_genes)
 geneset_info <- expand.grid(cluster_ids, c("t55-gastrocnemius", "t68-liver", "t58-heart"))
-geneset_names <- paste0("Cluster_", trimws(apply(geneset_inf, 1, paste0, collapse = "-")), "")
+geneset_names <- paste0("Cluster_", trimws(apply(geneset_info, 1, paste0, collapse = "-")), "")
 rownames(geneset_info) <- geneset_names
 colnames(geneset_info) <- c("cluster", "tissue")
 geneset_info$tissue_common_name <- MotrpacBicQC::bic_animal_tissue_code$abbreviation[match(geneset_info$tissue, MotrpacBicQC::bic_animal_tissue_code$tissue_name_release)]
@@ -839,9 +839,11 @@ foreach(cri=1:n_chromosomes) %dopar% {
 #and then remake that cluster_cts.ldcts file
 ldcts <- cbind(paste0("cluster_", cluster_ids, "  "), paste0("custom_genesets_2/cts_thin_annot/cluster_", cluster_ids, ".chr_"), ",", paste0("custom_genesets_2/cts_thin_annot/cluster_control.chr_"))
 ldcts <- sapply(1:nrow(ldcts), function(ri) paste0(ldcts[ri,], collapse = ""))
-# ldcts_name <- list.files(ldsc_directory, pattern = "ldcts")
+ldcts_name <- list.files(ldsc_directory, pattern = "ldcts")
+ldcts_name <- ldcts_name[grep("cluster_cts_", ldcts_name)]
+ldcts_name <- paste0("cluster_cts_", max(as.numeric(gsub(".ldcts", "", gsub("cluster_cts_", "", ldcts_name)))) + 1, ".ldcts")
 
-sink(paste0(ldsc_directory, "cluster_cts_4.ldcts"))
+sink(paste0(ldsc_directory, ldcts_name))
 cat(paste0(ldcts, "\n"), sep = "")
 sink()
 
@@ -863,9 +865,10 @@ foreach(gi=1:length(gwas_summary_files)) %dopar% {
   # for(gi in 1:1){
   cat(paste0(" (", gi, " / ", length(gwas_summary_files), ")")) 
   # command_ldsc <- paste0("python2 ldsc.py --h2-cts ", "gwas_sumstats/proper_format/", gwas_summary_files[gi], ".sumstats.gz --ref-ld-chr custom_genesets/cluster_1-15.chr_ --w-ld-chr weights_hm3_no_hla/weights. --overlap-annot --ref-ld-chr-cts cluster_cts.ldcts --frqfile-chr 1000G_Phase3_frq/1000G.EUR.QC. --n-blocks 200 --out output/cts/", strsplit(gwas_summary_files[gi], ".txt.gz")[[1]][1], "_Cluster_1-15")
-  command_ldsc <- paste0("python2 ldsc.py --h2-cts ", "gwas_sumstats/proper_format/", gwas_summary_files[gi], ".sumstats.gz --ref-ld-chr custom_genesets_2/cts_thin_annot/baseline.chr_ --w-ld-chr weights_hm3_no_hla/weights. --overlap-annot --ref-ld-chr-cts cluster_cts_4.ldcts --frqfile-chr 1000G_Phase3_frq/1000G.EUR.QC. --n-blocks 200 --out output/cts/", strsplit(gwas_summary_files[gi], ".txt.gz")[[1]][1], "_Cluster_Addenda")
+  command_ldsc <- paste0("python2 ldsc.py --h2-cts ", "gwas_sumstats/proper_format/signed/", gwas_summary_files[gi], ".sumstats.gz --ref-ld-chr custom_genesets_2/cts_thin_annot/baseline.chr_ --w-ld-chr weights_hm3_no_hla/weights. --overlap-annot --ref-ld-chr-cts ", ldcts_name," --frqfile-chr 1000G_Phase3_frq/1000G.EUR.QC. --n-blocks 200 --out output/cts/", strsplit(gwas_summary_files[gi], ".txt.gz")[[1]][1], "_Cluster_Addenda")
   # command_ldsc <- paste0("python2 ldsc.py --h2-cts ", "gwas_sumstats/proper_format/", gwas_summary_files[gi], ".sumstats.gz --ref-ld-chr 1000G_EUR_Phase3_baseline/baseline. --w-ld-chr weights_hm3_no_hla/weights. --overlap-annot --ref-ld-chr-cts cluster_cts.ldcts --frqfile-chr 1000G_Phase3_frq/1000G.EUR.QC. --n-blocks 1000 --out output/cts/", strsplit(gwas_summary_files[gi], ".txt.gz")[[1]][1], "_Cluster_1-15")
   # command_ldsc <- paste0("python2 ldsc.py --h2-cts ", "gwas_sumstats/proper_format/", gwas_summary_files[gi], ".sumstats.gz --ref-ld-chr custom_genesets/cluster_1.chr_ --w-ld-chr weights_hm3_no_hla/weights. --overlap-annot --ref-ld-chr-cts cluster_cts.ldcts --frqfile-chr 1000G_Phase3_frq/1000G.EUR.QC. --out output/cts/", strsplit(gwas_summary_files[gi], ".txt.gz")[[1]][1], "_Cluster_1")
   command <- paste0(command_changedir, command_initiateLDSC, command_ldsc)
   system(command)
 }
+

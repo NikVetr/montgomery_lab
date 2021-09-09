@@ -10,19 +10,38 @@ cart2polar <- function(x,y){c(atan(y/x), sqrt(x^2 + y^2))}
 dist_kd <- function(c1, c2){sqrt(sum((c1-c2)^2))}
 shrink <- function(x, a = 0.1){c(x[1] + diff(x)/2*a, x[2] - diff(x)/2*a)}
 
-cols <- RColorBrewer::brewer.pal(8, "Set1")
-cols <- unique(MotrpacBicQC::bic_animal_tissue_code$tissue_hex_colour)
-cols <- c("red", "blue", "green")
-cols <- cols[!is.na(cols)]
+#starting color spec
+motrpac_cols = T
+brewer_cols = F
+rainbow_circle_cols = F
+n_rainbow = 6
+n_optim_runs <- 20
+
+compress_saturation_by = 0
+compress_luminance_by = 0
+n_cols_to_add = 4
 
 
-dat <- orig_cols <- farver::decode_colour(cols, to = "hsl")
+if(brewer_cols){
+  cols <- RColorBrewer::brewer.pal(8, "Set1")
+  dat <- orig_cols <- farver::decode_colour(cols, to = "hsl")
+}
+
+if(motrpac_cols){
+  cols <- unique(MotrpacBicQC::bic_animal_tissue_code$tissue_hex_colour)
+  cols <- cols[!is.na(cols)]
+  dat <- orig_cols <- farver::decode_colour(cols, to = "hsl")
+}
+
+if(rainbow_circle_cols){
+  dat <- do.call(rbind, lapply(1:n_rainbow, function(x) farver::decode_colour("red", to = "hsl")) )
+  dat[,"h"] <- seq(0, 360, length.out = nrow(dat))  
+}
+
 dat[,"s"] <- dat[,"s"] / 100
 dat[,"h"] <- dat[,"h"] / 360 
 dat[,"l"] <- dat[,"l"] / 100
 
-dat <- do.call(rbind, lapply(1:10, function(x) dat) )
-dat[,"h"] <- seq(0, 1, length.out = nrow(dat))
 dat_orig <- dat
 dat_orig[,"h"] <- dat_orig[,"h"] * 360
 dat_orig[,"s"] <- dat_orig[,"s"] * 100
@@ -33,18 +52,14 @@ cols <- encode_colour(dat_orig, from = "hsl")
 bounds_saturation = quantile((dat[,"s"]), probs = c(0.05,0.95))
 bounds_luminance = quantile((dat[,"l"]), probs = c(0.1,0.7))
 
-bounds_saturation = c(0,1)
-bounds_luminance = c(0.4,0.6)
+bounds_saturation = c(0.1,0.9)
+bounds_luminance = c(0.3,0.6)
 
-
-compress_saturation_by = 0
-compress_luminance_by = 0
 dat <- list(old_cols = dat, 
             bounds_saturation = bounds_saturation, bounds_luminance = bounds_luminance, 
             compress_saturation_by = compress_saturation_by, compress_luminance_by = compress_luminance_by)
 
-n_cols_to_add = 4
-par <- rnorm(n = n_cols_to_add*3, sd = 2)
+par <- lapply(1:n_optim_runs, function(x) rnorm(n = n_cols_to_add*3, sd = 2))
 
 mean_dist <- function(par, dat){
   
@@ -60,7 +75,7 @@ mean_dist <- function(par, dat){
   #chroma & luminance bounded between 0 and 1, hue between 0 and 2pi
   pars <- pars_logit_scale <- matrix(par, ncol = 3, byrow = T)
   colnames(pars) <- colnames(dat)
-  pars[2:nrow(pars),"l"] <- exp(pars[2:nrow(pars),"h"]) #for identifiability
+  pars[2:nrow(pars),"l"] <- exp(pars[2:nrow(pars),"l"]) #for identifiability
   pars[,"l"] <- cumsum(pars[,"l"]) #for identifiability
   pars[,"l"] <- invlogit(pars[,"l"]) * diff(bounds_luminance) + bounds_luminance[1]
   pars[,"s"] <- invlogit(pars[,"s"]) * diff(bounds_saturation) + bounds_saturation[1] 
@@ -81,7 +96,7 @@ mean_dist <- function(par, dat){
     dists_par <- t(combn(x = 1:nrow(pars), m = 2))
     dists_par <- sapply(1:nrow(dists_par), function(ri) 
       dist_kd(cyl2cart(pars[dists_par[ri,1],1], pars[dists_par[ri,1],2], pars[dists_par[ri,1],3]), 
-              cyl2cart(pars[dists_par[ri,2],1], pars[dists_par[ri,2],2], pars[dists_par[ri,2],3]))) 
+              cyl2cart(pars[dists_par[ri,2],1], pars[dists_par[ri,2],2], pars[dists_par[ri,2],3])))
     dists <- c(dists_par, dists_dat)
   } else {
     dists <- dists_dat
@@ -97,20 +112,21 @@ mean_dist <- function(par, dat){
   # target <- -min(dists)
   
   #regularize at logit-scale boundaries w/ double exponential
-  rate_reg <- 0.01
+  rate_reg <- 1E-3
   target <- target - sum(dexp(abs(c(pars_logit_scale[,-1])), rate = rate_reg, log = T)) / 10
   
   return(target)
 }
 
-mean_dist(par, dat)
+mean_dist(par[[1]], dat)
 
 
-output <- optimx::optimx(par = par, fn = mean_dist, dat = dat, method = c("nlminb", "nlm", "Nelder-Mead", "BFGS", "Rvmmin", "CG"), control=list(kkt=FALSE))
+# output <- output_orig <- optimx::optimx(par = par, fn = mean_dist, dat = dat, method = c("nlminb", "nlm", "Nelder-Mead", "BFGS", "Rvmmin", "CG"), control=list(kkt=FALSE))
 # output <- optim(par = par, fn = mean_dist, dat = dat, method = c("Nelder-Mead"), hessian = T)
+output <- output_orig <- do.call(rbind, lapply(1:n_optim_runs, function(x) optimx::optimx(par = par[[x]], fn = mean_dist, dat = dat, method = c("nlm"), control=list(kkt=FALSE))))
 # solve(-output$hessian)
 output <- output[which.min(output$value),]
-raw_pars <- unlist(output[paste0("p", 1:length(par))])
+raw_pars <- unlist(output[paste0("p", 1:length(par[[1]]))])
 
 mean_dist(par = raw_pars, dat = dat)
 
@@ -124,20 +140,41 @@ par_est[,"s"] <- (invlogit(par_est[,"s"]) * diff(bounds_saturation) + bounds_sat
 new_cols <- farver::encode_colour(par_est, from = "hsl")
 
 
+#plot colorspace w/ old and new colors
 par(mfrow = c(2,1), mar = c(0,0,0,0))
-
-plot(y = 1:length(cols), x = rep(1, length(cols)), pch = 15, col = cols, cex = 10, xlim = c(0,5), ylim = c(0, length(cols) + 1),
+plot(x = NULL, y = NULL, pch = 15, col = cols, cex = 10, xlim = c(0,5), ylim = c(0, 1),
      frame.plot = F, xlab = "", ylab = "", xaxt = "n", yaxt = "n")
-points(y = 1:length(new_cols), x = rep(3, length(new_cols)), pch = 15, col = new_cols, cex = 10)
-points(x = c(1,3), y = c(length(cols)+1,length(new_cols)+1), cex = 10.5, col = "white", pch = 15)
-text(1, length(cols), cex = 1.5, "old colors", srt = 0)
-points(1.75, length(cols), cex = 2, pch = 1)
+max_col_num <- max(length(cols), length(new_cols))
+col_height <- 0.9 / max_col_num
+rect(xleft = rep(0.5, length(cols)), xright = rep(1.5, length(cols)), 
+     ybottom = cumsum(c(0, rep(col_height, length(cols)-1))),
+     ytop = cumsum(rep(col_height, length(cols))), col = cols)
+rect(xleft = rep(2, length(new_cols)), xright = rep(3, length(new_cols)), 
+     ybottom = cumsum(c(0, rep(col_height, length(new_cols)-1))),
+     ytop = cumsum(rep(col_height, length(new_cols))), col = new_cols)
 
-text(3, length(new_cols), cex = 1.5, "new colors", srt = 0)
-points(3.85, length(new_cols), cex = 1.75, pch = 0, xpd = NA)
+#color hex values
+text(x = 1, y = cumsum(c(0, rep(col_height, length(cols)-1))) + col_height / 2, labels = cols, col = "white")
+text(x = 2.5, y = cumsum(c(0, rep(col_height, length(new_cols)-1))) + col_height / 2, labels = new_cols, col = "white")
+
+#color labels
+text(1, length(cols) * col_height, cex = 1.5, "old colors", srt = 0, pos = 3)
+text(2.5, length(new_cols) * col_height, cex = 1.5, "new colors", srt = 0, pos = 3)
+points(1.75, length(cols) * col_height + 0.04, cex = 2, pch = 1)
+points(3.325, length(new_cols) * col_height + 0.04, cex = 1.75, pch = 0, xpd = NA)
+
+#luminosity
+nsegs <- 50
+rect(xleft = rep(3.9, nsegs), xright = rep(4.1, nsegs), ybottom = seq(0,0.5, length.out = nsegs), ytop = seq(0,0.5, length.out = nsegs) + 0.5 / nsegs, 
+         border = farver::encode_colour(matrix(nrow = nsegs, ncol = 3, data = c(rep(0, nsegs), rep(0,nsegs), seq(0,100, length.out = nsegs))), from = "hsl"),
+         col = farver::encode_colour(matrix(nrow = nsegs, ncol = 3, data = c(rep(0, nsegs), rep(0,nsegs), seq(0,100, length.out = nsegs))), from = "hsl"))
+rect(xleft = 3.9, xright = 4.1, ybottom = 0, ytop = 0.5 + 1 / nsegs)
+points(x = rep(3.8, 10) - seq(0,0.1, length.out = 10), y = seq(0,0.5, length.out = 10), pch = 21, cex = seq(0,100, length.out = 10) / 50 + 0.5)
+points(x = rep(4.2, 10) + seq(0,0.1, length.out = 10), y = seq(0,0.5, length.out = 10), pch = 22, cex = seq(0,100, length.out = 10) / 50 + 0.5)
+text(4, 0.5 + 1 / nsegs, cex = 1.5, "luminosity", srt = 0, pos = 3)
 
 
-
+#plot color wheel
 plot(1,1,col = "white", xlim = c(-1,1), ylim = c(-1,1), frame.plot = F, xlab = "", ylab = "", xaxt = "n", yaxt = "n")
 n_slices_t <- 60
 n_slices_r <- 20
