@@ -200,23 +200,132 @@ motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map, pattern = "-", replace
 motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map_covariates, pattern = " ", replacement = "_")
 motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map_covariates, pattern = "___", replacement = "_")
 all(paste0(motrpac_gtex_map_covariates, ".v8.covariates.txt") %in% list.files("~/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates"))
+if(!dir.exists(paste0(gtex_pipeline_directory, "fastQTL_output"))){dir.create(paste0(gtex_pipeline_directory, "fastQTL_output"))}
 for(tissue in names(motrpac_gtex_map)){
         command_gtex_1 <- paste0("python3 fastqtl/python/run_FastQTL_threaded.py ", 
                                  "GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_Analysis_Freeze.SHAPEIT2_phased.MAF01.vcf.gz ", 
                                  paste0("log2-normalized-expression/log2-normalized-expression_", tissue, ".expression.bed.gz "), 
                                  paste0("log2-normalized-expression_", tissue, " "), 
                                  paste0("--covariates GTEx_Analysis_v8_eQTL_covariates/", motrpac_gtex_map_covariates[match(tissue, names(motrpac_gtex_map_covariates))], ".v8.covariates.txt", " "), 
-                                 "--window 1e6 --chunks 100 --threads 16;")
+                                 "--window 1e6 --chunks 100 --threads 16; ")
         command_gtex_2 <- paste0("python3 fastqtl/python/run_FastQTL_threaded.py ", 
                                  "GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_Analysis_Freeze.SHAPEIT2_phased.MAF01.vcf.gz ", 
                                  paste0("log2-normalized-expression/log2-normalized-expression_", tissue, ".expression.bed.gz "), 
                                  paste0("log2-normalized-expression_", tissue, " "), 
                                  paste0("--covariates GTEx_Analysis_v8_eQTL_covariates/", motrpac_gtex_map_covariates[match(tissue, names(motrpac_gtex_map_covariates))], ".v8.covariates.txt", " "), 
-                                 "--window 1e6 --chunks 100 --threads 16 --permute 1000 10000;")
-        # command_movefile_1 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".expression.bed.gz.tbi "), 
-        #                              paste0("log2-normalized-expression/log2-normalized-expression_", tissue, ".expression.bed.gz.tbi; "))
-        # command_movefile_2 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".expression.bed.gz "), 
-        #                              paste0("log2-normalized-expression/log2-normalized-expression_", tissue, ".expression.bed.gz;"))
-        command <- paste0(command_changedir, command_gtex, command_movefile_1, command_movefile_2)
+                                 "--window 1e6 --chunks 100 --threads 16 --permute 1000 10000; ")
+        command_movefile_1 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".egenes.txt.gz "),
+                                     paste0("fastQTL_output/log2-normalized-expression_", tissue, ".egenes.txt.gz; "))
+        command_movefile_2 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".allpairs.txt.gz "),
+                                     paste0("fastQTL_output/log2-normalized-expression_", tissue, ".allpairs.txt.gz;"))
+        command <- paste0(command_changedir, command_gtex_1, command_gtex_2, command_movefile_1, command_movefile_2)
+        command <- paste0(command_changedir, command_gtex_1, command_movefile_1, command_movefile_2)
+        system(command)      
 }
         
+#offset all expected count and tpm by 1?
+for(tissue in names(motrpac_gtex_map)){
+        print(tissue)
+        
+        #read files
+        ec <- as.data.frame(fread(paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_", tissue, "_expected_count.gct.gz")))
+        tpm <- as.data.frame(fread(paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_", tissue, "_tpm.gct.gz")))
+        
+        #modify files
+        ec[,-1] <- ec[,-1] + 1
+        tpm[,-1] <- tpm[,-1] + 1
+        ec <- as.data.table(ec)
+        tpm <- as.data.table(tpm)
+        
+        #write files
+        writeLines(paste0("#1.2\n", nrow(ec), "\t", ncol(ec)-1),
+                   con = paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_expected_count_OFFSET1.gct"))
+        fwrite(ec, paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_expected_count_OFFSET1.gct"), sep = "\t", 
+               append = T, col.names = T)
+        system(paste0("cd ",gtex_pipeline_directory, "expression_data/; gzip -f ", "GTEx_Analysis_v8_", tissue, "_expected_count_OFFSET1.gct"))
+        
+        
+        writeLines(paste0("#1.2\n", nrow(tpm), "\t", ncol(tpm)-1),
+                   con = paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_tpm_OFFSET1.gct"))
+        fwrite(tpm, paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_tpm_OFFSET1.gct"), sep = "\t", 
+               append = T, col.names = T)
+        system(paste0("cd ",gtex_pipeline_directory, "expression_data/; gzip -f ", "GTEx_Analysis_v8_", tissue, "_tpm_OFFSET1.gct"))
+
+}
+
+#now rerun normalization script with offset
+command_changedir <- paste0("source ~/.bash_profile; cd ", gtex_pipeline_directory, "; ")
+if(!dir.exists(paste0(gtex_pipeline_directory, "log2-normalized-expression"))){dir.create(paste0(gtex_pipeline_directory, "log2-normalized-expression"))}
+for(tissue in names(motrpac_gtex_map)){
+        # foreach(tissue = names(motrpac_gtex_map)) %dopar% {
+        
+        print(tissue)
+        
+        command_gtex <- paste0("python3 qtl/src/eqtl_prepare_expression.py ", 
+                               paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_tpm_OFFSET1.gct.gz "), 
+                               paste0(gtex_pipeline_directory, "expression_data/GTEx_Analysis_v8_", tissue, "_expected_count_OFFSET1.gct.gz "), 
+                               "gencode.v26.GRCh38.genes.gtf ", 
+                               "sample_participant_lookup.txt ", 
+                               "GTEx_Analysis_vcf_chr_list.txt ", 
+                               paste0("log2-normalized-expression_", tissue, "_OFFSET1 "), 
+                               "--tpm_threshold 0.1 ", 
+                               "--count_threshold 6 ", 
+                               "--sample_frac_threshold 0.2 ", 
+                               "--normalization_method tmm; ")
+        command_movefile_1 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, "_OFFSET1.expression.bed.gz.tbi "), 
+                                     paste0("log2-normalized-expression/log2-normalized-expression_", tissue, "_OFFSET1.expression.bed.gz.tbi; "))
+        command_movefile_2 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, "_OFFSET1.expression.bed.gz "), 
+                                     paste0("log2-normalized-expression/log2-normalized-expression_", tissue, "_OFFSET1.expression.bed.gz;"))
+        command <- paste0(command_changedir, command_gtex, command_movefile_1, command_movefile_2)
+        system(command)      
+}
+
+#now run tensorqtl on these
+library(foreach)
+library(doParallel)
+library(parallel)
+
+#initialize parallelization
+if(!exists("cl")){
+        cl <- makeCluster(4, outfile="")
+        registerDoParallel(cl)
+}
+getDoParWorkers()
+
+motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map, pattern = "-", replacement = "_")
+motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map_covariates, pattern = " ", replacement = "_")
+motrpac_gtex_map_covariates <- gsub(x = motrpac_gtex_map_covariates, pattern = "___", replacement = "_")
+all(paste0(motrpac_gtex_map_covariates, ".v8.covariates.txt") %in% list.files("~/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates"))
+if(!dir.exists(paste0(gtex_pipeline_directory, "tensorQTL_output"))){dir.create(paste0(gtex_pipeline_directory, "tensorQTL_output"))}
+# for(tissue in names(motrpac_gtex_map)){
+command_changedir <- paste0("source ~/.bash_profile; cd ", gtex_pipeline_directory, "; ")
+foreach(tissue = names(motrpac_gtex_map)) %dopar% {
+        print(tissue)
+        command_gtex_1 <- paste0("python3 -m tensorqtl ",
+                                 "GTEx_v8 ",
+                                 paste0("log2-normalized-expression/log2-normalized-expression_", tissue,".expression.bed.gz "), #whoops! just redoing hypothalamus expression lol
+                                 paste0("log2-normalized-expression_", tissue," "),
+                                 paste0("--covariates GTEx_Analysis_v8_eQTL_covariates/", motrpac_gtex_map_covariates[names(motrpac_gtex_map_covariates) == tissue], ".v8.covariates.txt"," "),
+                                 "--mode cis ",
+                                 "--window 1000000 --maf_threshold 0.01 &> ", paste0("tensorQTL_output/", tissue, "_permutation_screen-out.txt"),"; ")
+        command_gtex_2 <- paste0("python3 -m tensorqtl ",
+                                 "GTEx_v8 ",
+                                 paste0("log2-normalized-expression/log2-normalized-expression_", tissue,".expression.bed.gz "),
+                                 paste0("log2-normalized-expression_", tissue," "),
+                                 paste0("--covariates GTEx_Analysis_v8_eQTL_covariates/", motrpac_gtex_map_covariates[names(motrpac_gtex_map_covariates) == tissue], ".v8.covariates.txt"," "),
+                                 "--mode cis_nominal ",
+                                 "--window 1000000 --maf_threshold 0.01 &> ", paste0("tensorQTL_output/", tissue, "_nominal_screen-out.txt"),"; ")
+        command_movefiles_1 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".tensorQTL.cis_nominal.log "), 
+                                     paste0("tensorQTL_output/log2-normalized-expression_", tissue, ".tensorQTL.cis_nominal.log; "))
+        command_movefiles_2 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".tensorQTL.cis.log "), 
+                                    paste0("tensorQTL_output/log2-normalized-expression_", tissue, ".tensorQTL.cis.log; "))
+        command_movefiles_3 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".cis_qtl.txt.gz "), 
+                                      paste0("tensorQTL_output/log2-normalized-expression_", tissue, ".cis_qtl.txt.gz; "))
+        command_movefiles_4 <- paste0("mv ", paste0("log2-normalized-expression_", tissue, ".cis_qtl_pairs.chr",c(1:22, "X"),".parquet "), 
+                                      paste0("tensorQTL_output/log2-normalized-expression_", tissue, ".cis_qtl_pairs.chr",c(1:22, "X"),".parquet; "))
+        command_movefiles <- c(command_movefiles_1, command_movefiles_2, command_movefiles_3, command_movefiles_4)
+        command_movefiles <- paste0(command_movefiles, collapse = "")
+        command <- paste0(command_changedir, command_gtex_1, command_gtex_2, command_movefiles)
+        system(command)      
+        
+}
