@@ -176,29 +176,31 @@ fastsim_MVN <- function(corr_step_multiplier = 0, n){
   x
 }
 
-n_y <- 20 #number of genes (or tissues)
+n_y <- 15 #number of genes (or tissues)
 bs_wanted = round(rnorm(n = n_y,0,2),2) #effect of each gene expression on z, the phenotype; if high, most of genotype signal should come from here
 h2_y <- rbeta(n_y,1,1)
 prop_resid_var_z <- rbeta(1,10,10)
 corr_mat_ys <- rlkj(n_y, 1)
 
-n_obs = 2E4 #total number of individuals in sample
-n_y <- length(bs_wanted)
-
-n_rep <- 1E2 #total number of loci influencing each gene
+n_obs = c(1E3, 2E4) #total number of individuals in samples 1 and 2
+n_rep <- 10 #total number of loci influencing each gene
 x_freq <- replicate(n_y, rbeta(n_rep,1,2)) #allele frequency across loci
 
 #uncorrelated alleles
-x1 <- lapply(1:n_y, function(gi) t(sapply(x_freq[,gi], function(xf) rbinom(n_obs, 2, prob = xf)))) #genotypes in pop 1
-x2 <- lapply(1:n_y, function(gi) t(sapply(x_freq[,gi], function(xf) rbinom(n_obs, 2, prob = xf)))) #genotypes in comparable pop2
+x1 <- lapply(1:n_y, function(gi) t(sapply(x_freq[,gi], function(xf) rbinom(n_obs[1], 2, prob = xf)))) #genotypes in pop 1
+x2 <- lapply(1:n_y, function(gi) t(sapply(x_freq[,gi], function(xf) rbinom(n_obs[2], 2, prob = xf)))) #genotypes in comparable pop2
 
 #autocorrelated alleles
-std_normal_thresholds <- qnorm(x_freq)
-x1 <- lapply(1:n_y, function(gi) replicate(n_obs, c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi]) + c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi])))
-x2 <- lapply(1:n_y, function(gi) replicate(n_obs, c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi]) + c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi])))
+# std_normal_thresholds <- qnorm(x_freq)
+# x1 <- lapply(1:n_y, function(gi) replicate(n_obs, c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi]) + c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi])))
+# x2 <- lapply(1:n_y, function(gi) replicate(n_obs, c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi]) + c(fastsim_MVN(n = n_rep) > std_normal_thresholds[,gi])))
 
 #effect of each marginal variant at each locus on gene expression
-bs_expr <- lapply(1:n_y, function(gi) rnorm(n_rep, sd = 1)) 
+bs_expr <- lapply(1:n_y, function(gi) rnorm(n_rep, sd = 1)) #uncorrelated effects on expression
+corr_loci <- 0.1
+bs_corrmat <- diag(n_y) + corr_loci - diag(n_y) * corr_loci
+bs_expr <- sapply(1:n_rep, function(li) rmvnorm(1, sigma = bs_corrmat)) #correlated effects on expression
+bs_expr <- lapply(1:n_y, function(gi) bs_expr[gi,])
 y1_exp <- lapply(1:n_y, function(gi) t(bs_expr[[gi]]) %*% x1[[gi]])
 y2_exp <- lapply(1:n_y, function(gi) t(bs_expr[[gi]]) %*% x2[[gi]])
 
@@ -206,35 +208,39 @@ sd_ys_obs <- sapply(1:n_y, function(gi) sd(c(y1_exp[[gi]], y2_exp[[gi]]))) #can 
 sd_ys_remaining <- sqrt(sd_ys_obs^2 * (1-h2_y) / h2_y)
 
 #expression levels in genes for pop1
-
-y1 <- lapply(1:n_y, function(gi) y1_exp[[gi]] + rnorm(n = n_obs, 0, sd_ys_remaining[gi]))
-resids_ys_1 <- rmvnorm(n = n_obs, mean = rep(0, n_y), sigma = diag(sd_ys_remaining) %*% corr_mat_ys %*% diag(sd_ys_remaining))
+y1 <- lapply(1:n_y, function(gi) y1_exp[[gi]] + rnorm(n = n_obs[1], 0, sd_ys_remaining[gi]))
+resids_ys_1 <- rmvnorm(n = n_obs[1], mean = rep(0, n_y), sigma = diag(sd_ys_remaining) %*% corr_mat_ys %*% diag(sd_ys_remaining))
 y1 <- lapply(1:n_y, function(gi) y1_exp[[gi]] + resids_ys_1[,gi]) #correlated residuals
 
 #expression levels in genes for pop2
-y2 <- lapply(1:n_y, function(gi) y2_exp[[gi]] + rnorm(n = n_obs, 0, sd_ys_remaining[gi]))
-resids_ys_2 <- rmvnorm(n = n_obs, mean = rep(0, n_y), sigma = diag(sd_ys_remaining) %*% corr_mat_ys %*% diag(sd_ys_remaining))
+y2 <- lapply(1:n_y, function(gi) y2_exp[[gi]] + rnorm(n = n_obs[2], 0, sd_ys_remaining[gi]))
+resids_ys_2 <- rmvnorm(n = n_obs[2], mean = rep(0, n_y), sigma = diag(sd_ys_remaining) %*% corr_mat_ys %*% diag(sd_ys_remaining))
 y2 <- lapply(1:n_y, function(gi) y2_exp[[gi]] + resids_ys_2[,gi]) #correlated residuals
 
 #phenotype z for each population
-bs_pheno <- lapply(1:n_y, function(gi) rnorm(n_rep, sd = 0.01))
+bs_pheno <- lapply(1:n_y, function(gi) rnorm(n_rep, mean = 10, sd = 1))
 
-z1_exp <- sapply(1:n_obs, function(indiv)
+z1_exp <- sapply(1:n_obs[1], function(indiv)
   sum(sapply(1:n_y, function(gi) sum(x1[[gi]][,indiv] * bs_pheno[[gi]]))) + #direct genetic effect 
   sum(sapply(1:n_y, function(gi) y1[[gi]][,indiv] %*% bs_wanted[[gi]])) #effect of gene expression
 )
 
-z2_exp <- sapply(1:n_obs, function(indiv)
+z2_exp <- sapply(1:n_obs[2], function(indiv)
   sum(sapply(1:n_y, function(gi) sum(x2[[gi]][,indiv] * bs_pheno[[gi]]))) + #direct genetic effect 
     sum(sapply(1:n_y, function(gi) y2[[gi]][,indiv] %*% bs_wanted[[gi]])) #effect of gene expression
 )
 
 sd_z <- sqrt(var(c(z1_exp, z2_exp)) * prop_resid_var_z / (1-prop_resid_var_z))
-z1 <- z1_exp + rnorm(n_obs, 0, sd_z)
-z2 <- z2_exp + rnorm(n_obs, 0, sd_z)
+z1 <- z1_exp + rnorm(n_obs[1], 0, sd_z)
+z2 <- z2_exp + rnorm(n_obs[2], 0, sd_z)
 
-fit1 <- do.call(rbind, lapply(1:n_y, function(gi) sapply(1:n_rep, function(li) lm(c(y1[[gi]]) ~ x1[[gi]][li,])$coefficients[2])))
-fit2 <- do.call(rbind, lapply(1:n_y, function(gi) sapply(1:n_rep, function(li) lm(z2 ~ x2[[gi]][li,])$coefficients[2])))
+#fit single regressions
+# fit1 <- do.call(rbind, lapply(1:n_y, function(gi) sapply(1:n_rep, function(li) lm(c(y1[[gi]]) ~ x1[[gi]][li,])$coefficients[2])))
+# fit2 <- do.call(rbind, lapply(1:n_y, function(gi) sapply(1:n_rep, function(li) lm(z2 ~ x2[[gi]][li,])$coefficients[2])))
+
+#alternatively, fit multiple regressions
+fit1 <- do.call(rbind, lapply(1:n_y, function(gi) lm(t(y1[[gi]]) ~ t(x1[[gi]]))$coefficients[-1]))
+fit2 <- do.call(rbind, lapply(1:n_y, function(gi) lm(t(t(z2)) ~ t(x2[[gi]]))$coefficients[-1]))
 
 pad_with_0s <- function(fit_mat){
   n_genes <- nrow(fit_mat)
@@ -242,12 +248,18 @@ pad_with_0s <- function(fit_mat){
   t(sapply(1:n_genes, function(gi) c(rep(0, (gi-1)*n_loci), fit_mat[gi,], rep(0, (n_genes-gi)*n_loci))))
 }
 
-fit1 <- pad_with_0s(fit1)
-fit2 <- c(t(fit2))
+fit1 <- t(pad_with_0s(fit1))
+rownames(fit1) <- colnames(fit1) <- NULL
+fit1_intercepts <- diag(n_rep * n_y)
+# fit1 <- cbind(fit1, fit1_intercepts)
+fit2 <- t(t(c(t(fit2))))
 
 #fit coefficients model
-fit3 <- rlm(t(t(fit2)) ~ t(fit1))
-fit3 <- lm(t(t(fit2)) ~ t(fit1))
+standardize <- function(x) (x - mean(x, na.rm = T)) / sd(x, na.rm = T)
+par(mfrow = c(1,2), mar = c(5,7,4,4))
+fit3 <- rlm(fit2 ~ fit1, na.action = na.exclude)
+# plot(standardize(resid(fit3)), standardize(unlist(bs_pheno)))
+# fit3 <- lm(fit2 ~ fit1)
 fit3_summary <- summary(fit3)
 plot(bs_wanted, y = fit3$coefficients[-1], cex.lab = 1.5, pch = 19, col = adjustcolor(1, 0.5), cex = 1.5,
      xlab = latex2exp::TeX("true value $\\beta_i$"), ylab = latex2exp::TeX("estimated value $\\hat{\\beta_i}$ from $\\Beta_z ~ \\Sigma \\beta_i\\Beta_{y_i}$"))

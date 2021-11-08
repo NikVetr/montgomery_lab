@@ -194,6 +194,7 @@ deg = '~/data/smontgom/dea/'
 #map = dl_read_gcp('gs://mawg-data/pass1b-06/transcript-rna-seq/mapping/pass1b-06_transcript-rna-seq_feature-mapping_20201002.txt', sep='\t')
 # map = fread('~/data/smontgom/pass1b-06_transcript-rna-seq_feature-mapping_20201002.txt', sep='\t', header=T)
 map = fread('~/data/smontgom/pass1b-06_transcript-rna-seq_feature-mapping_20210721.txt', sep='\t', header=T)
+map <- unique(map[,c("feature_ID", "human_ensembl_gene", "human_gene_symbol")])
 gwas = '~/data/smontgom/imputed_gwas_hg38_1.1'
 coloc = '~/data/smontgom/results_enloc_priors'
 
@@ -273,11 +274,18 @@ if(!exists("deg_eqtl_list")){
     gtex_tissue = motrpac_gtex_map[[motrpac_tissue]]
     gtex_egene = fread(sprintf('%s/%s.v8.egenes.txt.gz',eqtl,gtex_tissue), sep='\t', header=T)
     gtex_egene[, human_ensembl_gene := gsub('\\..*','',gene_id)]
+    gtex_egene$human_gene_symbol <- gtex_egene$gene_name
+    
+    
     
     # match human genes with rat ensembl genes 
-    gtex_egene = merge(gtex_egene, map, by='human_ensembl_gene')
+    gtex_egene = merge(gtex_egene, map, by='human_gene_symbol')
     gtex_motrpac = merge(gtex_egene, rna_dea$timewise_dea[tissue == motrpac_tissue], by='feature_ID')
     gtex_motrpac$abs_slope <- abs(gtex_motrpac$slope)
+    
+    cat(paste0("prop of feature_IDs matched: ", round(length(unique(gtex_motrpac$feature_ID)) / 
+                   length(unique(rna_dea$timewise_dea[tissue == motrpac_tissue]$feature_ID)), 3),
+                 "\nprop gene symbols in map: ", round(mean(gtex_egene$human_gene_symbol %in% map$human_gene_symbol), 2), "\n"))
     
     deg_eqtl_list[[motrpac_tissue]] = gtex_motrpac
     # gtex_motrpac$gene_symbol
@@ -5277,6 +5285,18 @@ available_twas_traits <- list.files(path = twas_results_directory)
 available_twas_tissues <- table(sapply(available_twas_traits, function(x) strsplit(x, "__PM__")[[1]][2]))
 available_twas_traits <- table(sapply(gsub(x = available_twas_traits, "spredixcan_igwas_gtexmashrv8_", ""), function(x) strsplit(x, "__P")[[1]][1]))
 
+# check cluster membership vs. FDR
+# load("~/data/dea_clustering_0.1-FDR-ftest_kmeans-15.RData")
+# load('~/data/smontgom/dea/transcript_rna_seq_20210804.RData')
+# cluster_membership <- cluster_membership[cluster_membership$cluster %in% c(1,3,7,15) & cluster_membership$assay == "TRNSCRPT",]
+# map = fread('~/data/smontgom/pass1b-06_transcript-rna-seq_feature-mapping_20210721.txt', sep='\t', header=T)
+# rna_dea_list <- lapply(setNames(unique(rna_dea$timewise_dea$tissue_abbreviation), unique(rna_dea$timewise_dea$tissue_abbreviation)), 
+#                        function(tissue_abbrev) rna_dea$timewise_dea[rna_dea$timewise_dea$tissue_abbreviation == tissue_abbrev,])
+# 
+# selection_FDRs <- sapply(1:nrow(cluster_membership), function(ri)
+#   rna_dea_list[[cluster_membership$tissue[ri]]]$selection_fdr[rna_dea_list[[cluster_membership$tissue[ri]]]$feature_ID == cluster_membership$feature_ID[ri]][1])
+# hist(selection_FDRs, breaks = 0:100/100)
+# mean(selection_FDRs > 0.1)
 
 #compile the twas into one big data frame?
 all_twas <- lapply(setNames(gwas_names, gwas_names), function(trait) data.table());
@@ -5316,11 +5336,11 @@ hist(log(all.twas$pvalue), breaks = -700:1)
 1-qvalue::pi0est(some.twas$pvalue)$pi0
 sum(some.twas$pvalue < 0.05 / nrow(some.twas))
 
-data <- data.frame(trait = names(sort(table(some.twas[p.adjust(some.twas$pvalue, method = "BH") < 0.05,]$trait))),
-                   n_sig = as.integer(sort(table(some.twas[p.adjust(some.twas$pvalue, method = "BH") < 0.05,]$trait))))
-ggplot(data, aes(x=trait, y=n_sig)) + 
+data <- data.frame(Trait = names(sort(table(some.twas[p.adjust(some.twas$pvalue, method = "bonf") < 0.05,]$trait))),
+                   n_sig_bonferroni = as.integer(sort(table(some.twas[p.adjust(some.twas$pvalue, method = "bonf") < 0.05,]$trait))))
+ggplot(data, aes(x=Trait, y=n_sig_bonferroni)) + 
   geom_bar(stat = "identity") + theme_bw(base_size = 10) + 
-  coord_flip() + scale_x_discrete(limits=data$trait)                      
+  coord_flip() + scale_x_discrete(limits=data$Trait)                      
 
 data <- data.frame(trait = names(sort(table(all.twas[all.twas$pvalue < 0.05 / nrow(all.twas),]$trait))),
                    n_sig = as.integer(sort(table(all.twas[all.twas$pvalue < 0.05 / nrow(all.twas),]$trait))))
@@ -5345,22 +5365,56 @@ deg_eqtl_list_TWAS <- deg_eqtl_list
 for(tissue_i in names(deg_eqtl_list_TWAS)){
   
   print(tissue_i)
-  twas_addition <- data.frame(matrix(nrow = nrow(deg_eqtl_list_TWAS[[tissue_i]]), ncol = length(salient_twas)))
-  twas_addition_zscore <- data.frame(matrix(nrow = nrow(deg_eqtl_list_TWAS[[tissue_i]]), ncol = length(salient_twas)))
-  colnames(twas_addition) <- colnames(twas_addition_zscore) <- salient_twas
+  # twas_addition <- data.frame(matrix(nrow = nrow(deg_eqtl_list_TWAS[[tissue_i]]), ncol = length(salient_twas)))
+  # twas_addition_nominalPValue <- data.frame(matrix(nrow = nrow(deg_eqtl_list_TWAS[[tissue_i]]), ncol = length(salient_twas))) 
+  # twas_addition_zscore <- data.frame(matrix(nrow = nrow(deg_eqtl_list_TWAS[[tissue_i]]), ncol = length(salient_twas)))
+  # colnames(twas_addition) <- colnames(twas_addition_zscore) <- salient_twas
   twas_sub <- some.twas[tissue == tissue_i]
   
+  gtex_motrpac <- rna_dea$timewise_dea[tissue == tissue_i]
   for(trait_j in salient_twas){
+    # twas_sub_sub <- twas_sub[trait == trait_j]
+    # twas_addition[,trait_j] <- twas_sub_sub$pvalue_BH[match(deg_eqtl_list_TWAS[[tissue_i]]$gene_id, twas_sub_sub$gene)]
+     
+    # subset in TWAS
     twas_sub_sub <- twas_sub[trait == trait_j]
-    twas_addition[,trait_j] <- twas_sub_sub$pvalue_BH[match(deg_eqtl_list_TWAS[[tissue_i]]$gene_id, twas_sub_sub$gene)]
-    twas_addition_zscore[,trait_j] <- twas_sub_sub$zscore[match(deg_eqtl_list_TWAS[[tissue_i]]$gene_id, twas_sub_sub$gene)]
+    twas_sub_sub[, human_ensembl_gene := gsub('\\..*','',gene)]
+    twas_sub_sub$human_gene_symbol <- twas_sub_sub$gene_name
+    p_twas_in_map <- round(mean(unique(twas_sub_sub$human_gene_symbol) %in% unique(map$human_gene_symbol)), 3)
+    
+    # match human genes with rat ensembl genes
+    twas_sub_sub = merge(twas_sub_sub, map, by='human_gene_symbol')
+    twas_sub_sub <- twas_sub_sub[,c("feature_ID", "gene_name", "pvalue", "zscore")]
+    colnames(twas_sub_sub)[-match(c("feature_ID", "gene_name"), colnames(twas_sub_sub))] <- paste0(trait_j, ".", 
+                        colnames(twas_sub_sub)[-match(c("feature_ID", "gene_name"), colnames(twas_sub_sub))])
+    
+    matched_twas <- twas_sub_sub[match(gtex_motrpac$feature_ID, twas_sub_sub$feature_ID),-c("feature_ID")]
+    if(trait_j != salient_twas[1]){matched_twas <- matched_twas[,-"gene_name"]}
+    gtex_motrpac <- cbind(gtex_motrpac, matched_twas)
+
+    cat(paste0("\nprop of twas genes in map: ", p_twas_in_map,
+                 "\nprop of resulting feature_IDs matched to GTEx: ", round(mean(!is.na(matched_twas[,1])), 3)))
+
+    # twas_addition_nominalPValue[,trait_j] <- twas_sub_sub$pvalue[match(deg_eqtl_list_TWAS[[tissue_i]]$gene_id, twas_sub_sub$gene)]
+    # twas_addition_zscore[,trait_j] <- twas_sub_sub$zscore[match(deg_eqtl_list_TWAS[[tissue_i]]$gene_id, twas_sub_sub$gene)]
   }
+  deg_eqtl_list_TWAS[[tissue_i]] <- gtex_motrpac
   
-  colnames(twas_addition) <- paste0(colnames(twas_addition), "_BH_PValue")
-  colnames(twas_addition_zscore) <- paste0(colnames(twas_addition_zscore), "_zscore")
-  deg_eqtl_list_TWAS[[tissue_i]] <- cbind(deg_eqtl_list_TWAS[[tissue_i]], twas_addition, twas_addition_zscore)
+  # colnames(twas_addition) <- paste0(colnames(twas_addition), "_BH_PValue")
+  # colnames(twas_addition_nominalPValue) <- paste0(colnames(twas_addition_nominalPValue), "_Nominal_PValue")
+  # colnames(twas_addition_zscore) <- paste0(colnames(twas_addition_zscore), "_zscore")
+  # deg_eqtl_list_TWAS[[tissue_i]] <- cbind(deg_eqtl_list_TWAS[[tissue_i]], twas_addition, twas_addition_nominalPValue, twas_addition_zscore)
 
 }
+
+#get number of p-values
+# deg_eqtl_list_TWAS_all <- do.call(rbind, deg_eqtl_list_TWAS)
+# deg_eqtl_list_TWAS_all <- deg_eqtl_list_TWAS_all[deg_eqtl_list_TWAS_all$sex == "female"]
+# deg_eqtl_list_TWAS_all <- deg_eqtl_list_TWAS_all[deg_eqtl_list_TWAS_all$comparison_group == "8w"]
+# 
+# all_twas_pvalues <- unlist(as.data.frame(deg_eqtl_list_TWAS_all)[,grep(colnames(deg_eqtl_list_TWAS_all), pattern = ".pvalue")])
+# all_twas_pvalues <- all_twas_pvalues[!is.na(all_twas_pvalues)]
+# n_twas_comparisons <- length(all_twas_pvalues)
 
 #first do simple gene intersect
 if(!exists("cluster_membership")){
@@ -5371,31 +5425,53 @@ if(!exists("cluster_membership")){
   cluster_genes <- cluster_genes[!is.na(cluster_genes)]
 }
 
-n_deg_sigtwas_intersect <- as.data.frame(matrix(0, nrow = length(deg_eqtl_list_TWAS), ncol = length(salient_twas), dimnames = list(names(deg_eqtl_list_TWAS), salient_twas)))
-for(tissue_i in names(deg_eqtl_list_TWAS)){
+# deg_eqtl_list_TWAS_all_1.3.7.15 <- deg_eqtl_list_TWAS_all[deg_eqtl_list_TWAS_all$gene_name %in% cluster_genes,]
+# all_twas_pvalues_clusters_1.3.7.15 <- unlist(as.data.frame(deg_eqtl_list_TWAS_all_1.3.7.15)[,grep(colnames(deg_eqtl_list_TWAS_all_1.3.7.15_subsetSexTime), pattern = ".pvalue")])
+# all_twas_pvalues_clusters_1.3.7.15 <- all_twas_pvalues_clusters_1.3.7.15[!is.na(all_twas_pvalues_clusters_1.3.7.15)]
+# n_twas_comparisons_clusters_1.3.7.15 <- length(all_twas_pvalues_clusters_1.3.7.15)
+
+#hmm wait that is not quite right... let's subset it to the cluster-tissue subset first, and then further subset it to the FDR genes
+deg_eqtl_list_TWAS_cluster_subset <- lapply(deg_eqtl_list_TWAS[-which(names(deg_eqtl_list_TWAS) %in% c("t1000-gonads", "t63-testes", "t64-ovaries"))], function(tissue_dea) 
+    tissue_dea[tissue_dea$feature_ID %in% cluster_membership$feature_ID[cluster_membership$tissue == tissue_dea$tissue_abbreviation[1] & 
+                                                                        cluster_membership$ome == "TRNSCRPT" & 
+                                                                        cluster_membership$cluster %in% c(1,3,7,15)],] 
+    #& tissue_dea$selection_fdr < 0.1,]
+  )
+
+deg_eqtl_list_TWAS_cluster_subset_ntests <- do.call(rbind, deg_eqtl_list_TWAS_cluster_subset)
+deg_eqtl_list_TWAS_cluster_subset_ntests <- deg_eqtl_list_TWAS_cluster_subset_ntests[deg_eqtl_list_TWAS_cluster_subset_ntests$sex == "female" &
+                                                                                       deg_eqtl_list_TWAS_cluster_subset_ntests$comparison_group == "8w",]
+twas_pvalues_clusters <- unlist(as.data.frame(deg_eqtl_list_TWAS_cluster_subset_ntests)[,grep(colnames(deg_eqtl_list_TWAS_cluster_subset_ntests), pattern = ".pvalue")])
+twas_pvalues_clusters <- twas_pvalues_clusters[!is.na(twas_pvalues_clusters)]
+n_twas_comparisons_clusters <- length(twas_pvalues_clusters)
+
+n_deg_sigtwas_intersect <- as.data.frame(matrix(0, nrow = length(deg_eqtl_list_TWAS_cluster_subset), ncol = length(salient_twas), dimnames = list(names(deg_eqtl_list_TWAS_cluster_subset), salient_twas)))
+for(tissue_i in names(deg_eqtl_list_TWAS_cluster_subset)){
   
   print(tissue_i)
-  DELT <- as.data.frame(deg_eqtl_list_TWAS[[tissue_i]])
+  DELT <- as.data.frame(deg_eqtl_list_TWAS_cluster_subset[[tissue_i]])
   
-  DE_inds <- which(DELT$selection_fdr <= 0.05)
-  TWAS_inds <- apply(DELT[,grep(colnames(DELT), pattern = "BH_PValue")] < 0.05, 2, which)
+  DE_inds <- which(DELT$selection_fdr <= 1) #since we're subsetting to monotonic clusters already, but why not
+  TWAS_inds <- apply(log(DELT[,grep(colnames(DELT), pattern = ".pvalue")]) <= (log(0.05) - log(n_twas_comparisons_clusters)), 2, which)
   
   intersect_inds <- lapply(TWAS_inds, function(twi) intersect(DE_inds, twi))
   intersect_genes <- lapply(intersect_inds, function(ii) unique(DELT$gene_name[ii]))
-  intersect_genes <- lapply(intersect_genes, function(ii) intersect(ii, cluster_genes)) #subset to just monotonic sex-homogenous clusters
+  # intersect_genes <- lapply(intersect_genes, function(ii) intersect(ii, cluster_genes)) #subset to just monotonic sex-homogenous clusters
   
   n_intersect <- sapply(intersect_genes, function(ig) length(ig))
-  names(n_intersect) <- gsub(names(n_intersect), pattern = "_BH_PValue", replacement = "")
+  names(n_intersect) <- gsub(names(n_intersect), pattern = ".pvalue", replacement = "")
   n_deg_sigtwas_intersect[tissue_i,names(n_intersect)] <- n_intersect
 
 }
 
 n_deg_sigtwas_intersect <- n_deg_sigtwas_intersect[,order(apply(n_deg_sigtwas_intersect, 2, sum), decreasing = T)]
+n_deg_sigtwas_intersect <- n_deg_sigtwas_intersect[,apply(n_deg_sigtwas_intersect, 2, sum) != 0]
 
 #now plot it
 par(xpd = T)
 plot(1, xaxt="n",yaxt="n",bty="n",pch="",ylab="",xlab="", main="", sub="", xlim= c(-5,ncol(n_deg_sigtwas_intersect)), ylim = c(-5,nrow(n_deg_sigtwas_intersect)))
-heatmap_cols <- viridisLite::viridis(n = max(n_deg_sigtwas_intersect))
+heatmap_cols <- viridisLite::viridis(n = max(n_deg_sigtwas_intersect)*100+1)
+heatmap_cols <- heatmap_cols[round(log(1:max(n_deg_sigtwas_intersect)) / log(max(n_deg_sigtwas_intersect)) * max(n_deg_sigtwas_intersect) * 100 + 1)]
 for(ri in 1:nrow(n_deg_sigtwas_intersect)){
   text(x = 0.5, y = ri, pos = 2, labels = rownames(n_deg_sigtwas_intersect)[ri])
   for(ci in 1:ncol(n_deg_sigtwas_intersect)){
@@ -5406,12 +5482,15 @@ for(ri in 1:nrow(n_deg_sigtwas_intersect)){
          ybottom = ri - 1/2,
          ytop =  ri + 1/2,
          col = heatmap_cols[n_deg_sigtwas_intersect[ri, ci]])
+    text(n_deg_sigtwas_intersect[ri, ci], x = ci, y = ri, col = "white", cex = 0.85)
   }
 }
 #legend
 for(i in 0:max(n_deg_sigtwas_intersect)){
-  text(labels = i, x = ncol(n_deg_sigtwas_intersect) + 2.25, pos = 4, cex = 0.75,
+  if(i %in% round(seq(0, max(n_deg_sigtwas_intersect), length.out = 10))){
+    text(labels = i, x = ncol(n_deg_sigtwas_intersect) + 2.25, pos = 4, cex = 0.75,
        y = (i) * nrow(n_deg_sigtwas_intersect) / (max(n_deg_sigtwas_intersect)+1) + 0.675)
+  }
   rect(xleft = ncol(n_deg_sigtwas_intersect) + 2 + 1/2,
        xright = ncol(n_deg_sigtwas_intersect) + 2 - 1/2,
        ybottom = (i - 1/2) * nrow(n_deg_sigtwas_intersect) / (max(n_deg_sigtwas_intersect)+1) + 0.75,
@@ -5419,9 +5498,9 @@ for(i in 0:max(n_deg_sigtwas_intersect)){
        col = heatmap_cols[i]) 
 }
 text(labels = latex2exp::TeX("n_{intersect}"), pos = 3, font = 2,
-     x = ncol(n_deg_sigtwas_intersect) + 3, y = nrow(n_deg_sigtwas_intersect) - 0.25)
-text("number of genes simultaneously DE from exercise and w/ significant TWAS @ FDR threshold = 0.05", 
-     x = 30, y = nrow(n_deg_sigtwas_intersect) + 1, pos = 3, cex = 1.5, font = 2)
+     x = ncol(n_deg_sigtwas_intersect) + 2, y = nrow(n_deg_sigtwas_intersect) + 0.5)
+text(latex2exp::TeX("number of genes in monotonic, sex-homogenous clusters and w/ Bonferroni significant TWAS at $\\alpha$ = 0.05"), 
+     x = 22, y = nrow(n_deg_sigtwas_intersect) + 0.5, pos = 3, cex = 1.25, font = 2)
 
 
 
@@ -5431,39 +5510,431 @@ text("number of genes simultaneously DE from exercise and w/ significant TWAS @ 
 
 
 #now do the proportion
-deg_sigtwas_proportion <- array(0, dim = c(length(deg_eqtl_list_TWAS), length(salient_twas), 4, 2), 
-                                dimnames = list(names(deg_eqtl_list_TWAS), salient_twas, paste0(2^(0:3), "w"), c("p", "n")))
-for(tissue_i in names(deg_eqtl_list_TWAS)){
+deg_sigtwas_proportion <- array(NA, dim = c(length(deg_eqtl_list_TWAS_cluster_subset), length(salient_twas), 4, 3, 2), 
+                                dimnames = list(names(deg_eqtl_list_TWAS_cluster_subset), salient_twas, paste0(2^(0:3), "w"), c("p", "n", "genes"), c("male", "female")))
+nuniq <- function(x) length(unique(x))
+for(tissue_i in names(deg_eqtl_list_TWAS_cluster_subset)){
   
   print(tissue_i)
   
   for(time in paste0(2^(0:3), "w")){
-    DELT <- as.data.frame(deg_eqtl_list_TWAS[[tissue_i]])
-    DELT <- DELT[DELT$comparison_group == time,]
     
-    DE_inds <- which(DELT$adj_p_value <= 1)
-    TWAS_inds <- apply(DELT[,grep(colnames(DELT), pattern = "BH_PValue")] < 0.05, 2, which)
+    for(sex in c("male", "female")){
+      
+      DELT <- as.data.frame(deg_eqtl_list_TWAS_cluster_subset[[tissue_i]])
+      
+      #subset to time, sex, and unique gene entries
+      DELT <- DELT[DELT$comparison_group == time,]
+      DELT <- DELT[DELT$sex == sex,]
+      if(nrow(DELT) == 0){next()}
+      DELT <- DELT[match(unique(DELT$gene_name), DELT$gene_name),] #pull out only first gene entry
+      
+      DE_inds <- which(DELT$adj_p_value <= 1)
+      # TWAS_inds <- apply(DELT[,grep(colnames(DELT), pattern = "BH_PValue")] < 0.05, 2, which)
+      TWAS_inds <- apply(log(DELT[,grep(colnames(DELT), pattern = ".pvalue")]) <= (log(0.05) - log(n_twas_comparisons_clusters)), 2, which)
+      
+      intersect_inds <- lapply(TWAS_inds, function(twi) intersect(DE_inds, twi))
+      intersect_inds <- lapply(intersect_inds, function(ii) ii[DELT$gene_name[ii] %in% cluster_genes]) #subset to just monotonic sex-homogenous clusters
+      intersect_genes <- lapply(intersect_inds, function(ii) unique(DELT$gene_name[ii]))
+      
+      
+      intersect_sign_logFC <- lapply(intersect_inds, function(ii) sign(DELT$logFC[ii]))
+      names(intersect_sign_logFC) <- gsub(names(intersect_sign_logFC), pattern = ".pvalue", replacement = "")
+      intersect_sign_TWAS <- lapply(gsub(names(intersect_inds), pattern = ".pvalue", replacement = ""), function(ii) 
+                             sign(DELT[intersect_inds[paste0(ii, ".pvalue")][[1]], paste0(ii, ".zscore")]))
+      intersect_sign_match <- lapply(1:length(intersect_sign_logFC), function(i) intersect_sign_logFC[[i]]*intersect_sign_TWAS[[i]])
+      
+      intersect_genes_strings <- lapply(1:length(intersect_sign_logFC), function(i) 
+        paste0(intersect_genes[[i]], " (", c("-", "", "+")[intersect_sign_match[[i]] + 2], ")", collapse = " ~ "))
+      intersect_genes_strings <- unlist(intersect_genes_strings)
+      intersect_genes_strings[intersect_genes_strings == " ()"] <- ""
+      
+      intersect_sign_match <- sapply(intersect_sign_match, function(x) mean(x == 1))
+      intersect_sign_match_n <- sapply(intersect_inds, function(x) length(x))
+      
+      deg_sigtwas_proportion[tissue_i,names(n_intersect),time, "p", sex] <- intersect_sign_match
+      deg_sigtwas_proportion[tissue_i,names(n_intersect),time, "n", sex] <- intersect_sign_match_n
+      deg_sigtwas_proportion[tissue_i,names(n_intersect),time, "genes", sex] <- intersect_genes_strings
     
-    intersect_inds <- lapply(TWAS_inds, function(twi) intersect(DE_inds, twi))
-    intersect_inds <- lapply(intersect_inds, function(ii) ii[DELT$gene_name[ii] %in% cluster_genes]) #subset to just monotonic sex-homogenous clusters
-    
-    intersect_sign_logFC <- lapply(intersect_inds, function(ii) sign(DELT$logFC[ii]))
-    names(intersect_sign_logFC) <- gsub(names(intersect_sign_logFC), pattern = "_BH_PValue", replacement = "")
-    intersect_sign_TWAS <- lapply(gsub(names(intersect_inds), pattern = "_BH_PValue", replacement = ""), function(ii) 
-                           sign(DELT[intersect_inds[paste0(ii, "_BH_PValue")][[1]], paste0(ii, "_zscore")]))
-    intersect_sign_match <- lapply(1:length(intersect_sign_logFC), function(i) intersect_sign_logFC[[i]]*intersect_sign_TWAS[[i]])
-    intersect_sign_match <- sapply(intersect_sign_match, function(x) mean(x == 1))
-    intersect_sign_match_n <- sapply(intersect_inds, function(x) length(x) / 2)
-    
-    deg_sigtwas_proportion[tissue_i,names(n_intersect),time, "p"] <- intersect_sign_match
-    deg_sigtwas_proportion[tissue_i,names(n_intersect),time, "n"] <- intersect_sign_match_n
+    }
     
   }
   
 }
 
-deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "hypert", ignore.case = T)],,"p"]
+deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "type_1_diabetes", ignore.case = T)],,"p",sex]
+deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "reported_hypertension", ignore.case = T)],,"p",sex]
+deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "heart_problems", ignore.case = T)],,"n",sex]
+deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "Body_mass_index_BMI", ignore.case = T)],,"p",sex]
+deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "Body_fat_percentage", ignore.case = T)],,"p",sex]
+
+#plot lines for proportions
+trait <- salient_twas[grep(salient_twas, pattern = "reported_hypertension", ignore.case = T)][1]
+trait <- salient_twas[grep(salient_twas, pattern = "Body_fat_percentage", ignore.case = T)][1]
+
+cols = list(Tissue=tissue_cols[names(deg_eqtl_list)], 
+            Time=group_cols[paste0(c(1,2,4,8), "w")],
+            Sex=sex_cols[c('male','female')])
+tissue_names <- sapply(strsplit(names(cols$Tissue), "-"), function(x) paste0(x[ifelse(length(x) == 2, c(2), list(2:3))[[1]]], collapse = " "))
+
+
+
+
+par(mfrow = c(1,2), xpd = NA, mar = c(5,5,5,17))
+lwd <- 3
+for(sex in c("male", "female")){
+  
+  #retrieve data
+  d <- apply(deg_sigtwas_proportion[, trait,,"p",sex], 2, as.numeric)
+  dn <-  apply(deg_sigtwas_proportion[, trait,,"n",sex], 2, as.numeric)
+  colnames(d) <- colnames(dn) <- colnames(deg_sigtwas_proportion[, trait,,"p",sex])
+  rownames(d) <- rownames(dn) <- rownames(deg_sigtwas_proportion[, trait,,"p",sex])
+  dn <- dn[complete.cases(d),]
+  d <- d[complete.cases(d),]
+  dg <- deg_sigtwas_proportion[, trait,,"genes",sex]
+  dg <- lapply(dg[,"8w"], function(x) strsplit(x, " ~ ")[[1]])
+  
+  #iterate through d to make identical lines parallel
+  line_thickness <- lwd / 96 / par("pin")[2] * (par("usr")[4] - par("usr")[3])
+  need_to_increment <- matrix(T, nrow = nrow(d), ncol = ncol(d), dimnames = list(rownames(d), colnames(d)))
+  while(any(need_to_increment)){
+    need_to_increment <- matrix(F, nrow = nrow(d), ncol = ncol(d), dimnames = list(rownames(d), colnames(d)))
+    for(coi in 1:(ncol(d)-1)){
+      unchanging_tissues <- rownames(unique(d[,c(coi,coi+1)]))
+      need_to_increment[setdiff(rownames(d), unchanging_tissues),c(coi,coi+1)] <- T
+    }
+    d[need_to_increment] <- d[need_to_increment] + line_thickness * 1.05
+  }
+  
+  #find coordinates to plot tissue names
+  xylocs_tissue_names <- FField::FFieldPtRep(coords = cbind(rep(4 + 0.25, nrow(d)), 
+                                                            c(d[,"8w"] * 100 + rnorm(nrow(d), 0, 1E-2))),
+                                             rep.fact = 20, adj.max = 1)
+  xylocs_tissue_names$y <- xylocs_tissue_names$y / 100
+  
+  #find coordinates to plot gene names
+  xylocs_tissues_genes <- data.frame(gene = unlist(dg[rownames(xylocs_tissue_names)[order(xylocs_tissue_names$y, decreasing = T)]]))
+  xylocs_tissues_genes$tissue <- rownames(xylocs_tissue_names)[sapply(rownames(xylocs_tissues_genes), function(x) 
+    grep(strsplit(x, "-")[[1]][1], rownames(xylocs_tissue_names)))]
+  xylocs_tissues_genes$x <- 5.75
+  # xylocs_tissues_genes$y <- xylocs_tissue_names$y[match(xylocs_tissues_genes$tissue, rownames(xylocs_tissue_names))]
+  # xylocs_tissues_genes$y <- xylocs_tissues_genes$y + 1:length(xylocs_tissues_genes$y)/1E4
+  xylocs_tissues_genes$y <- seq(max(xylocs_tissue_names$y) + 0.05, min(xylocs_tissue_names$y) - 0.1, length.out = nrow(xylocs_tissues_genes))
+  # xylocs_tissues_genes_locs <- FField::FFieldPtRep(coords = cbind(xylocs_tissues_genes$x, 
+  #                                                                 xylocs_tissues_genes$y * 100), 
+  #                                                  rep.fact = 20, adj.max = 1, iter.max = 5E3)
+  # xylocs_tissues_genes$y <- xylocs_tissues_genes_locs$y / 100
+  
+  plot(100,100,xlim = c(1,4), ylim = c(0,1), xpd=NA, 
+       ylab = "Proportion Positive Effects on GWAS Trait", xlab = "Timepoint", xaxt = "n", yaxt = "n", bty="n", cex.lab = 1.25, cex.axis = 1.25)
+  
+  
+  #plot faded positive and negative regions
+  rect(xl = 1, xr = 4, yb = 0.5, ytop = 1,
+       col = grDevices::adjustcolor("red", 0.1), border = NA)
+  rect(xl = 1, xr = 4, yb = 0, ytop = 0.5,
+       col = grDevices::adjustcolor("blue", 0.1), border = NA)
+  
+  text(c("\u2642", "\u2640")[c("male", "female") == sex], col = cols$Sex[sex], cex = 3.5, font = 3, pos = 3,
+       x = par("usr")[2] * 0.5 + par("usr")[1] * 0.5, y = par("usr")[3] * 0 + par("usr")[4] * 1)
+  
+  #horizontal axis
+  segments(x0 = 1:4, x1 = 1:4, y0 = - 0.02, y1 = - 0.04)
+  segments(x0 = 1, x1 = 4, y0 = - 0.02, y1 = - 0.02)
+  text(x = 1:4, y = - 0.04, labels = paste0(2^(0:3), "w"), pos = 1)
+  
+  #vertical axis
+  segments(x0 = 1 - 3 * 0.02, x1 = 1 - 3 * 0.04, y0 = 0:5/5, y1 = 0:5/5)
+  segments(x0 = 1 - 3 * 0.02, x1 = 1 - 3 * 0.02, y0 = 0, y1 = 1)
+  text(x = 1 - 3 * 0.02, y = 0:5/5, labels = 0:5/5, pos = 2)
+  
+  
+  for(tissue in rownames(d)){
+    
+    if(all(is.na(d[tissue,]))){
+      next()
+    }
+    
+    lines(1:4, d[tissue,], lwd = lwd, col = cols$Tissue[tissue])
+    
+    #plot tissue names
+    text(x = xylocs_tissue_names$x[rownames(xylocs_tissue_names) == tissue], cex = 1,
+         y = xylocs_tissue_names$y[rownames(xylocs_tissue_names) == tissue], 
+         labels = paste0(tissue, " (", dn[tissue,"8w"], ")"), col = cols$Tissue[tissue], pos = 4)
+    segments(x0 = 4, y0 = d[tissue,"8w"], 
+             x1 = xylocs_tissue_names$x[rownames(xylocs_tissue_names) == tissue] + 0.075, 
+             y1 = xylocs_tissue_names$y[rownames(xylocs_tissue_names) == tissue],
+             col = cols$Tissue[tissue], lty = 3)
+    
+    #plot gene names
+    tissue_genes <- xylocs_tissues_genes[xylocs_tissues_genes$tissue == tissue,]
+    text(labels = tissue_genes$gene,
+         x = tissue_genes$x,
+         y = tissue_genes$y,
+         cex = 0.875, col = cols$Tissue[tissue], pos = 4)
+    for(gene_i in 1:nrow(tissue_genes)){
+      segments(x0 = xylocs_tissue_names$x[rownames(xylocs_tissue_names) == tissue] + 
+                 strwidth(paste0(tissue, " (", dn[tissue,"8w"], ")   "), units = "user"), 
+               y0 = xylocs_tissue_names$y[rownames(xylocs_tissue_names) == tissue],
+               x1 = tissue_genes$x[gene_i] + 0.75*strwidth("  ", units = "user"),
+               y1 = tissue_genes$y[gene_i],
+               col = cols$Tissue[tissue], lty = 3)
+    }
+    
+  }
+  # legend(x = 1, y = 1.5, legend = tissue_names, 
+  #        col = cols$Tissue, lwd = 3, ncol = 4, cex = 1, border = NA, seg.len = 1, bg = NA, bty = "n", x.intersp = 0.25, text.width = 0.65)
+  # segments(x0 = 0.9, y0 = 0.5, x1 = 4.1, y1 = 0.5, lty = 3, lwd = 3, col = "lightgrey")
+  
+}
+text(trait_categories$new_Phenotype[trait_categories$Tag == trait], x =0, y = 1.175, cex = 2, font = 2)
 
 
 #make data table for nicole 
-save(deg_eqtl_list_TWAS, file = "~/data/smontgom/deg_eqtl_twas.RData")
+# save(deg_eqtl_list_TWAS, file = "~/data/smontgom/deg_eqtl_twas.RData")
+
+# plot(p.adjust(do.call(rbind, deg_eqtl_list_TWAS)$UKB_20002_1223_self_reported_type_2_diabetes_Nominal_PValue, method = "bonf"),
+# do.call(rbind, deg_eqtl_list_TWAS)$UKB_20002_1223_self_reported_type_2_diabetes_BH_PValue)
+
+#### GREX, or just expression data works too ####
+# load libraries
+library(foreach)
+library(doParallel)
+library(parallel)
+
+#initialize parallelization
+if(!exists("cl")){
+  cl <- makeCluster(3, outfile="")
+  registerDoParallel(cl)
+}
+getDoParWorkers()
+
+library(data.table)
+
+motrpac_gtex_map = c('t30-blood-rna'='Whole Blood',
+                     't52-hippocampus'='Brain - Hippocampus',
+                     't53-cortex'='Brain - Cortex',
+                     't54-hypothalamus'='Brain - Hypothalamus',
+                     't55-gastrocnemius'='Muscle - Skeletal',
+                     't56-vastus-lateralis'='Muscle - Skeletal',
+                     't58-heart'='Heart - Left Ventricle',
+                     't59-kidney'='Kidney - Cortex',
+                     't60-adrenal'='Adrenal Gland',
+                     't61-colon'='Colon - Transverse',
+                     't62-spleen'='Spleen',
+                     't63-testes'='Testis',
+                     't64-ovaries'='Ovary',
+                     't66-lung'='Lung',
+                     't67-small-intestine'='Small Intestine - Terminal Ileum',
+                     't68-liver'='Liver',
+                     't70-white-adipose'='Adipose - Subcutaneous')
+tissues <- names(motrpac_gtex_map)
+sds_expression <- list()
+for(tissue in tissues){
+  print(tissue)
+  d <- fread(file = paste0("~/repos/gtex-pipeline/log2-normalized-expression/log2-normalized-expression_",tissue,".expression.bed.gz"))
+  d$gene_id <- gsub('\\..*','',d$gene_id)
+  
+  # ec <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_expected_count.gct.gz"))
+  # ec$gene_id <- gsub('\\..*','',ec$gene_id)
+  # 
+  # tpm <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_tpm.gct.gz"))
+  # tpm$gene_id <- gsub('\\..*','',tpm$gene_id)
+  # 
+  # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(ec)))))
+  # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(tpm)))))
+  # 
+  # plot(as.numeric(d[1,-c(1:4)]), log2(as.numeric(ec[match(d$gene_id[1], ec$gene_id),-1])+1))
+  # plot(as.numeric(d[3,-c(1:4)]), log2(as.numeric(tpm[match(d$gene_id[3], tpm$gene_id),-1])+1))
+  # plot(as.numeric(tpm[1,-1]), as.numeric(ec[1,-1]))
+
+  
+  indivs <- colnames(d)[grep("GTEX", colnames(d))]
+  sds_expression[[tissue]] <- setNames(apply(d[,..indivs], 1, sd), d$gene_id)
+}
+# sapply(sds_expression, function(x) length(x))
+if(all(sapply(tissues, function(ti) all(names(sds_expression[[1]]) == names(sds_expression[[ti]]))))){
+  sds_expression <- do.call(rbind, sds_expression)
+}
+rownames(sds_expression) <- tissues
+GTEx_SampleSize <- read.csv("~/data/smontgom/GTEx_SampleSizes.csv", header = T)
+colnames(GTEx_SampleSize) <- gsub("X..", "", colnames(GTEx_SampleSize))
+GTEx_SampleSize <- data.frame(tissue = names(motrpac_gtex_map), sample_size = GTEx_SampleSize$RNASeq.and.Genotyped.samples[match(motrpac_gtex_map, GTEx_SampleSize$Tissue)])
+hist(do.call(rbind, sds_expression))
+library(arrow)
+ldsc_directory <- "~/repos/ldsc/"
+
+process_GWASy_sumstats <- F
+if(process_GWASy_sumstats){
+  foreach(tissue=tissues, .packages = c("data.table", "arrow")) %dopar% {
+  # for(tissue in tissues){
+    print(tissue)
+    if(!dir.exists(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue))){dir.create(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue))}
+    
+    for(cri in c(1:22,"X")){
+      
+      cat(paste0(" ", cri))
+      if(!dir.exists(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue, "/", cri))){dir.create(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue, "/", cri))}
+      
+      RSID_POS_MAP <- fread(paste0("~/data/smontgom/RSID_POS_MAP_",cri,".txt"))
+      
+      eQTL_sumstats <- read_parquet(paste0("~/repos/gtex-pipeline/tensorQTL_output/log2-normalized-expression_", tissue,".cis_qtl_pairs.chr", cri, ".parquet"))
+      eQTL_sumstats$ENSG <- gsub('\\..*','',eQTL_sumstats$phenotype_id)
+      
+      vids <- eQTL_sumstats$variant_id
+      vids <- substr(vids, start = 4, nchar(vids))
+      vids <- strsplit(vids, "_", T)
+      vids <- as.data.table(data.frame(data.table::transpose(vids)))
+      colnames(vids) <- c("CHROM", "POS", "REF", "ALT", "BUILD")
+      vids$RSID <- RSID_POS_MAP$ID[match(vids$POS, RSID_POS_MAP$POS)]
+      eQTL_sumstats <- cbind(eQTL_sumstats, vids)
+      eQTL_sumstats <- eQTL_sumstats[!is.na(eQTL_sumstats$RSID),]
+      eQTL_sumstats$Z <- round(eQTL_sumstats$slope / eQTL_sumstats$slope_se, 5)
+      eQTL_sumstats$N <-  paste0(GTEx_SampleSize$sample_size[GTEx_SampleSize$tissue == tissue], ".00")
+      
+      genes <- unique(eQTL_sumstats$ENSG)
+      eQTL_sumstats <- split(eQTL_sumstats , f = eQTL_sumstats$ENSG)
+      eQTL_sumstats <- lapply(eQTL_sumstats, function(gid){
+                              gene_info <- gid[,c("RSID", "REF", "ALT", "Z", "N")]
+                              colnames(gene_info) <- c("SNP", "A1", "A2", "Z", "N")
+                              return(gene_info)
+      })
+      
+      for(gene_name in names(eQTL_sumstats)){
+        
+        fwrite(eQTL_sumstats[[gene_name]], file = paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue, "/", cri, "/", gene_name, ".sumstats.gz"), sep = "\t", append = F, col.names = T)
+      }
+      
+    }
+  }
+}
+
+#compare to heritability estimates from https://github.com/WheelerLab/GenArchDB
+library(data.table)
+h2dir <- "~/repos/GenArchDB/GenArch_reml-no-constrain_h2/"
+h2_files <- list.files(h2dir)
+h2_files <- h2_files[intersect(grep("GTEx", h2_files), grep(".TS.", h2_files))]
+intersect_rec <- function(x) {
+  if(length(x) <= 1){
+    return(x)
+  }else if(length(x) > 2){
+    x[[1]] <- intersect(x[[1]], x[[2]])
+    intersect_rec(x[-2])
+  } else {
+    intersect(x[[1]], x[[2]])
+  }
+}
+h2_tissue_to_file <- sapply(motrpac_gtex_map, function(tissue) h2_files[intersect_rec(sapply(strsplit(tissue, "_")[[1]], function(x) grep(x, h2_files)))][1])
+tissue = names(motrpac_gtex_map)[7]
+h2 <- fread(paste0(h2dir, h2_tissue_to_file[tissue]))
+h2$gene_id <- gsub('\\..*','',h2$ensid)
+
+#compare to gcta heritability estimates
+gcta_directory <- "~/repos/gcta_1.93.2beta_mac/"
+load(paste0(gcta_directory, "gcta_output_GTEx_allTissues.RData")) #gcta_output
+
+par(mfrow = c(4,4))
+for(tissue in setdiff(names(motrpac_gtex_map), "t59-kidney")){
+  h2 <- fread(paste0(h2dir, h2_tissue_to_file[tissue]))
+  h2$gene_id <- gsub('\\..*','',h2$ensid)
+  h2s <- h2$global.h2[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, h2$gene_id)]
+  prop_pos <- round(sum(h2s > 0, na.rm = T) / sum(!is.na(h2s)) * 100, 1)
+  hist(h2s, main= paste0(tissue, " (", prop_pos, "% positive)"), xlab = "heritability")
+}
+for(tissue in setdiff(names(motrpac_gtex_map), "t59-kidney")){
+  h2 <- as.data.frame(fread(paste0(h2dir, h2_tissue_to_file[tissue])))
+  h2$gene_id <- gsub('\\..*','',h2$ensid)
+  h2$myh2 <- gcta_output[[tissue]]$h2[match(h2$gene_id, gcta_output[[tissue]]$ENSG)]
+  h2s <- h2[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x[deg_eqtl_list[[tissue]]$comparison_group == "1w" & deg_eqtl_list[[tissue]]$sex == deg_eqtl_list[[tissue]]$sex[1]], 
+                  h2$gene_id), c("local.h2", "myh2")]
+  plot(h2s[complete.cases(h2s),], main= paste0(tissue, " (r = ", round(cor(h2s[complete.cases(h2s),])[1,2], 3), ")"), 
+       xlab = "wheeler h2", ylab = "my gcta h2", pch = 19, col = adjustcolor(1, 0.1))
+}
+
+#compute relative exercise effect z-scores
+
+for(tissue in tissues){
+  print(tissue)
+  deg_eqtl_list[[tissue]]$phenotypic_expression_Z <- deg_eqtl_list[[tissue]]$logFC / sds_expression[tissue, match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, colnames(sds_expression))]
+  deg_eqtl_list[[tissue]]$genetic_expression_Z <- deg_eqtl_list[[tissue]]$logFC / 
+    (sds_expression[tissue, match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, colnames(sds_expression))] * 
+       sqrt(gcta_output[[tissue]]$h2[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)]))
+  deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z <- deg_eqtl_list[[tissue]]$logFC / 
+    (sds_expression[tissue, match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, colnames(sds_expression))] * 
+       sqrt(gcta_output[[tissue]]$h2[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)] + 
+              2 * gcta_output[[tissue]]$SE[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)]))
+}
+
+#compute quantile plots
+qs2use <- 1:9999/10000
+EZ_PZ <- lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+  sapply(tissues, function(tissue) quantile(
+    x = deg_eqtl_list[[tissue]]$phenotypic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == ti], 
+    probs = qs2use, na.rm = T)))
+EZ_PZ <- lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+  sapply(tissues, function(tissue) quantile(
+    x = deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == ti], 
+    probs = qs2use, na.rm = T)))
+EZ_PZ <- lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+  sapply(tissues, function(tissue) quantile(
+    x = (deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z[deg_eqtl_list[[tissue]]$comparison_group == ti]), 
+    probs = qs2use, na.rm = T)))
+
+tissue <- tissues[3]
+plot(deg_eqtl_list[[tissue]]$logFC, deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z)
+
+#### just the plotting ####
+#functions
+logit <- function(p) log(p / (1-p))
+invlogit <- function(x) exp(x)/(1+exp(x))
+squish_middle_p <- function(p,f) invlogit(logit(p)*f)
+unsquish_middle_p <- function(p,f) invlogit(logit(p)/f)
+squish_middle_x <- function(x,f) log(abs(x)+1)/log(f)*sign(x)
+unsquish_middle_x <- function(x,f) (f^(abs(x))-1)*sign(x)
+redistribute <- function(x, incr){
+  new_x <- seq(from = min(x), length.out = length(x), by = incr)[rank(x)]
+  new_x - max(new_x) + max(x)
+}
+
+ti = "8w"
+f_p <- 0.4
+f_x <- 2
+ylims = c(min(sort(EZ_PZ[[ti]])[sort(EZ_PZ[[ti]]) != -Inf]),max(sort(EZ_PZ[[ti]],T)[sort(EZ_PZ[[ti]],T) != Inf]))
+ylims <- squish_middle_x(ylims, f_x)
+
+plot(100,100,xlim = c(0,1.25), ylim = ylims, xpd=NA, ylab = "Z-Score",
+     main = latex2exp::TeX("Ratio of Exercise DE to \\sqrt{Variance in log_2(Gene Expression)}"), xlab = "Quantile", xaxt = "n", yaxt = "n", bty="n", cex.lab = 1.25, cex.axis = 1.25)
+
+xylocs_tissue_names <- cbind(rep(1.05, ncol(EZ_PZ[[ti]])), redistribute(as.numeric(squish_middle_x(tail(EZ_PZ[[ti]], 1), f_x)), diff(ylims) / 30))
+rownames(xylocs_tissue_names) <- colnames(EZ_PZ[[ti]]); colnames(xylocs_tissue_names) <- c("x", "y")
+
+#horiz axis
+segments(x0 = 0, y0 = ylims[1] - diff(ylims) / 100, x1 = 1, y1 = ylims[1] - diff(ylims) / 100, lwd = 2)
+segments(x0 = 0:10/10, y0 = ylims[1] - diff(ylims) / 100, x1 = 0:10/10, y1 = ylims[1] - diff(ylims) / 50, lwd = 2, xpd = NA)
+horiz_axis_labels <- round(unsquish_middle_p(0:10/10, f_p), 3)
+horiz_axis_labels[1] <- 0; horiz_axis_labels[length(horiz_axis_labels)] <- 1;
+text(labels = horiz_axis_labels, x = 0:10/10, y = rep(ylims[1] - diff(ylims) / 50, 10), pos = 1, xpd = NA)
+segments(x0 = 0.5, y0 = ylims[1], x1 = 0.5, y1 = ylims[2], lwd = 2, lty = 2, col = "grey50")
+segments(x0 = 0:10/10, y0 = ylims[1], x1 = 0:10/10, y1 = ylims[2], lwd = 1, lty = 3, col = "grey75")
+
+#vert axis
+segments(x0 = -1/100, y0 = ylims[1] + diff(ylims)/100, x1 = -1/100, y1 = ylims[2], lwd = 2)
+segments(x0 = -1/100, y0 = seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), x1 = -1/50,
+         y1 = seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), lwd = 2)
+text(labels = round(unsquish_middle_x(seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), f_x), 2),
+     x = -1/50, y = seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), pos = 2, xpd = NA)
+segments(x0 = 0, y0 = 0, x1 = 1, y1 = 0, lwd = 2, lty = 2, col = "grey50")
+segments(x0 = 0, y0 = seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), x1 = 1, 
+         y1 = seq(ylims[1] + diff(ylims)/100, ylims[2], length.out = 10), lwd = 1, lty = 3, col = "grey75")
+
+
+for(tissue in colnames(EZ_PZ[[ti]])){
+  lines(squish_middle_p(qs2use, f_p), squish_middle_x(EZ_PZ[[ti]][,tissue], f_x), col = cols$Tissue[tissue])
+  text(tissue, x = xylocs_tissue_names[tissue,"x"], y = xylocs_tissue_names[tissue,"y"], pos = 4, xpd = NA,
+       col = cols$Tissue[tissue])
+  segments(x0 = squish_middle_p(tail(qs2use, 1), f_p), x1 = xylocs_tissue_names[tissue,"x"]+0.01,
+           y0 = squish_middle_x(tail(EZ_PZ[[ti]][,tissue], 1), f_x), y1 = xylocs_tissue_names[tissue,"y"],
+           lty = 3, col = cols$Tissue[tissue])
+}
+shadowtext(x = xylocs_tissue_names[1,"x"], y = min(xylocs_tissue_names[,"y"]) - diff(ylims) / 7.5, labels = ti, 
+           cex = 5, col = cols$Time[ti], pos = 4, r = 0.2) 

@@ -1,7 +1,7 @@
 #specify generative model parameters
-n = 20000
+n = 2000
 a = 3
-b = 0.001
+b = 2
 
 #simulate data
 x = rnorm(n)

@@ -146,6 +146,10 @@ addImg <- function(
               interpolate = interpolate)
 }
 if(!exists("time_de")){load('~/data/smontgom/time_de.RData')} # this is a data.table
+load('~/data/smontgom/dea/transcript_rna_seq_20210804.RData')
+nrow(transcript_rna_seq$timewise_dea)
+time_de <- as.data.table(transcript_rna_seq$timewise_dea[,colnames(transcript_rna_seq$timewise_dea) %in% colnames(time_de)])
+
 # convert to z-scores
 time2 = time_de[,.(feature_ID, sex, comparison_group, tissue, logFC, p_value)]
 time2[,z := qnorm(p_value/2)*sign(logFC)]
@@ -707,14 +711,14 @@ colours$Tissue <- colours$Tissue[!is.na(colours$Tissue)]
 nnmap <- as.data.frame(bic_animal_tissue_code[,4:5])
 nice_names <- sapply(names(colours$Tissue), function(tissue) nnmap$abbreviation[match(tissue, nnmap$tissue_name_release)])
 
-corr_thresh <- 0.3
+corr_thresh <- 0.2
 
 axis.length <- 1.5
 center_rescaler <- 1.25
 inner_shifter <- 0.96
 no_concentric_arcs <- F
 opacity_concentric_arcs <- 1
-opacity_nonconcentric_arcs <- 0.25
+opacity_nonconcentric_arcs <- 0.3
 outer_shifter <- 1.04
 line_weight_power <- 2
 line_weight_multiplier <- 10
@@ -723,10 +727,15 @@ tissue_names_not_colors <- T
 tissue_name_cex <- 0.29
 across_relationships <- T
 adjacent_relationships <- T
+opacity_multiplier_within_tissue <- 0
 
-# for(tissues_to_include in tissues){
+tissues <- as.list(names(colours$Tissue))
+tissues[[length(tissues)+1]] <- unlist(tissues)
 
-tissues_to_include <- tissues[2]
+
+for(tissues_to_include in tissues){
+
+# tissues_to_include <- tissues
 print(tissues_to_include)
   
 grDevices::cairo_pdf(filename = paste0("~/Documents/figure2a_suggestion/network_visualization/", 
@@ -768,6 +777,7 @@ et$color <- c("#2096be", "#e28a4a")[as.numeric(et$color)]
 
 et$concentric <- et$tiss1 != et$tiss2
 et$opacity <- opacity_nonconcentric_arcs
+et$opacity[et$tiss1 == et$tiss2] <- et$opacity[et$tiss1 == et$tiss2] * opacity_multiplier_within_tissue
 et$opacity[et$concentric] <- opacity_concentric_arcs
 
 et_wt <- lapply(1:4, function(time) et[et$time1 == time & et$time2 == time & (et$tiss1 %in% tissues_to_include | et$tiss2 %in% tissues_to_include),])
@@ -775,6 +785,12 @@ et_wt <- lapply(1:4, function(time) et[et$time1 == time & et$time2 == time & (et
 if(no_concentric_arcs){
   et_wt <- lapply(1:4, function(time) et_wt[[time]][et_wt[[time]]$tiss1 != et_wt[[time]]$tiss2,])
 }
+
+#get within-tissue opacities multiplied
+for(i in 1:length(et_wt)){
+  et_wt[[i]]$opacity[et_wt[[i]]$tiss1 == et_wt[[i]]$tiss2] <- et_wt[[i]]$opacity[et_wt[[i]]$tiss1 == et_wt[[i]]$tiss2] * opacity_multiplier_within_tissue
+}
+
 
 plot(1,1,xlim = c(-2,2), ylim = c(-2,2), col = "white", xaxt = "n", yaxt = "n", frame.plot = FALSE, xlab = "", ylab = "")
 centers <- list(c(-1,1), c(1,1), c(1,-1), c(-1,-1))
@@ -875,8 +891,14 @@ et$opacity[et$concentric] <- opacity_concentric_arcs
  
 
 et_bt <- lapply(1:4, function(time) et[et$time1 == time & et$time2 != time & (et$tiss1 %in% tissues_to_include | et$tiss2 %in% tissues_to_include),])
+
 if(no_concentric_arcs){
   et_bt <- lapply(1:4, function(time) et_bt[[time]][et_bt[[time]]$tiss1 != et_bt[[time]]$tiss2 | et_bt[[time]]$sex1 != et_bt[[time]]$sex2,])
+}
+
+#get between-tissue opacities multiplied
+for(i in 1:length(et_bt)){
+  et_bt[[i]]$opacity[et_bt[[i]]$tiss1 == et_bt[[i]]$tiss2] <- et_bt[[i]]$opacity[et_bt[[i]]$tiss1 == et_bt[[i]]$tiss2] * opacity_multiplier_within_tissue
 }
 
 #hack to fix sex mixup -- TODO find originl bug
@@ -892,6 +914,7 @@ if(no_concentric_arcs){
 if(adjacent_relationships){
 
   for(time in 1:4){
+    if(nrow(et_bt[[time]]) == 0){next()}
     for(ri in 1:nrow(et_bt[[time]])){
       if(any(et_bt[[time]][ri,"tiw"] == c(1,2))){
         t1 = aas_bt[[time]][[et_bt[[time]][ri,"tiw"]]][et_bt[[time]][ri,"theta1"]]
@@ -1039,8 +1062,10 @@ text(x = rep(xl, n_tiss), y = seq(yb - 0.25, yb - 0.25 - (yt - yb) / 11 * n_tiss
 
 dev.off()
 
+}
+
 #stitch pdfs together
-pdftools::pdf_combine(paste0("~/Documents/figure2a_suggestion/network_visualization/", c("all-tissues", tissues), "_corrThresh-", corr_thresh, ".pdf"), 
+pdftools::pdf_combine(paste0("~/Documents/figure2a_suggestion/network_visualization/", c("all-tissues", tissues), "_corrThresh-", corr_thresh, ".pdf"),
                       output = paste0("~/Documents/figure2a_suggestion/hive-y_network-visualization.pdf"))
 
 
