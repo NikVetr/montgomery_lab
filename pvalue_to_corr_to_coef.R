@@ -291,7 +291,14 @@ summary(lm(ys~x, d))$coefficients[2,1]
 a = qt(p = inv_tail_prop_right(pval), df = n - 2) / sqrt(n-2)
 abs(a / sqrt(a^2 +1)) * sign(summary(fit)$coefficients["x", "Estimate"]) / sqrt(x_prob * (1-x_prob) * 2) 
 #last bit is the variance of a binomial random variable, which would assume pop at HW-equilibrium. For exact equality to lm(), divide by sd(x), which we don't know
-abs(a / sqrt(a^2 +1)) * sign(summary(fit)$coefficients["x", "Estimate"]) / sd(x)
+abs(a / sqrt(a^2 +1)) * sign(summary(fit)$coefficients["x", "Estimate"]) / sd(x) 
+abs(a / sqrt(a^2 +1)) * sign(summary(fit)$coefficients["x", "Estimate"]) / sd(x) / abs(qt(pval/2,n-2))
+
+
+summary(lm(ys~x, d))$coefficients[2,1]
+summary(lm(ys~x, d))$coefficients[2,2]
+
+summary(lm(ys~xs, d))$coefficients[2,1] / sd(x)
 
 ## can use standard errors for quadratic approx of marginal posterior
 library(calculus)

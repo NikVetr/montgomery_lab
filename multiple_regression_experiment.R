@@ -1,4 +1,3 @@
-
 #number of parameters, i.e. 'X's
 np <- 20
 
@@ -68,7 +67,7 @@ points(B_hat, B, pch = 19, col = adjustcolor("green", 0.5), cex = 1.25); abline(
 # C_hat_SE <- sapply(1:np, function(p) summary(lm(Y ~ 1 + X[,p]))$coefficients[2,2])
 B_hat_SE <- summary(lm(Y~1+X))$coefficients[-1,2]
 diag(solve(cov(X))) / B_hat_SE^2
-sd(summary(lm(Y~1+X))$residuals) #similar to summary(lm(Y~1+X))$sigma
+var(summary(lm(Y~1+X))$residuals)
 var(Y) * (1-summary(lm(Y~1+X))$r.squared)
 (n-1) / (var(Y) * (1-summary(lm(Y~1+X))$adj.r.squared))
 (n-1) / summary(lm(Y~1+X))$sigma^2
@@ -83,13 +82,11 @@ adj_r2
 
 B_hat_SE <- summary(lm(Y~1+X))$coefficients[-1,2]
 B_hat_SE
-cov_B_hat <- solve(cov(X)) / c(((n-1) * (var(Y) * (1-adj_r2))))
-solve(cov(X)) / c((var(Y) * (1-adj_r2))) / (n-1)
-est_B_hat_SE <- sqrt(diag(cov_B_hat))
+Cov_B <- solve(cov(X)) / c(((n-1) / (var(Y) * (1-adj_r2))))
+est_B_hat_SE <- sqrt(diag(Cov_B))
 est_B_hat_SE
 all(abs(B_hat_SE - est_B_hat_SE) < 1E-6)
 plot(B_hat_SE, est_B_hat_SE, pch = 19, col = adjustcolor("blue", 0.5), cex = 1.25); abline(0,1,col=2,lwd=2)
-
 
 #### let's try adding unreported covariates ####
 nZ <- 5
