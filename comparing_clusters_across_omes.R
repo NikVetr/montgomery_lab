@@ -263,7 +263,7 @@ buffer_hist <- 0.05
 plot_trnscript_logFC <- T
 plot_protein_logFC <- T
 plot_logFC_diff <- T
-plot_trnscript_zscore <- F
+plot_trnscript_zscore <- T
 plot_protein_tscore <- F
 plot_TZ_diff <- F
 use_zscore_corrs <- F
@@ -278,7 +278,7 @@ polygon_interval <- 0.20
 foreach(cli=1:15, .packages = c("MotrpacBicQC", "data.table")) %dopar% {
 # for(cli in 15){
   
-grDevices::cairo_pdf(filename = paste0("~/Documents/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
                                        ifelse(proteins_determine_cluster_assignment, "proteins-determine-cluster-assignment_", ""), 
                                        ifelse(swap_logFC_shrunkLogFC, "shrunkLogFC_", ""), "cluster_", cli,".pdf"), width = 850 / 72, height = 800 / 72, family="Arial Unicode MS")
 par(mfrow = c(2,2))
@@ -891,9 +891,9 @@ segments(x0 = (hist_breaks + 1)*(1-buffer_hist)+buffer_hist, x1 = (hist_breaks +
 text(labels = hist_breaks, x = (hist_breaks + 1)*(1-buffer_hist)+buffer_hist, 
      y = -0.01, pos = 1, xpd = NA, cex = 0.75)
 if(use_zscore_corrs){
-  text( latex2exp::TeX("Pearson Correlation between Transcript & Protein Z-/T-Score Trajectories"), x = 1, y = -0.15, pos = 1, xpd = NA)
+  text( latex2exp::TeX("Bivariate Brownian r_{ij} between Transcript & Protein Z-/T-Score Trajectories"), x = 1, y = -0.15, pos = 1, xpd = NA)
 } else {
-  text( latex2exp::TeX("Pearson Correlation between Transcript & Protein log_2FC Trajectories"), x = 1, y = -0.15, pos = 1, xpd = NA)  
+  text( latex2exp::TeX("Bivariate Brownian r_{ij} between Transcript & Protein log_2FC Trajectories"), x = 1, y = -0.15, pos = 1, xpd = NA)  
 }
 
 
@@ -909,7 +909,7 @@ legend_params <- legend(x = 0, y = 1, col = adjustcolor(ome_cols[c(plot_trnscrip
                                    latex2exp::TeX("protein_{t-score}-transcr_{z-score}"))
                         [c(plot_trnscript_logFC, plot_protein_logFC, plot_trnscript_zscore, F, plot_logFC_diff, plot_protein_tscore, plot_TZ_diff)], 
                         pch = 15, pt.cex = 2, yjust = 0, cex = 0.75, plot = F)
-shadowtext(x =legend_params$rect$left  - 0.025, y = legend_params$rect$top, bg = "white", r = 0.1,
+shadowtext(x =legend_params$rect$left  - 0.025, y = legend_params$rect$top + diff(par("usr")[3:4])/45, bg = "white", r = 0.1,
            labels = paste0("(", quantiles_to_use[1], ", ", quantiles_to_use[2], ")\nQuantile Range"), 
            col = "grey20", pos = 4, cex = 0.7, font = 2, xpd = NA)
 
@@ -970,13 +970,22 @@ dev.off()
 
 
 
-pdftools::pdf_combine(paste0("~/Documents/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
+pdftools::pdf_combine(paste0("~/Documents/Documents - nikolai/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
                              ifelse(proteins_determine_cluster_assignment, "proteins-determine-cluster-assignment_", ""), 
                              ifelse(swap_logFC_shrunkLogFC, "shrunkLogFC_", ""),"cluster_", 1:15,".pdf"), 
-                      output = paste0("~/Documents/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
+                      output = paste0("~/Documents/Documents - nikolai/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
                                       ifelse(proteins_determine_cluster_assignment, "proteins-determine-cluster-assignment_", ""), 
                                       ifelse(swap_logFC_shrunkLogFC, "shrunkLogFC_", ""),
                                       "transcriptome-vs-proteome_clusters1-15_(", polygon_interval ,"-QuantileRange).pdf"))
+
+pdftools::pdf_combine(paste0("~/Documents/Documents - nikolai/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
+                             ifelse(proteins_determine_cluster_assignment, "proteins-determine-cluster-assignment_", ""), 
+                             ifelse(swap_logFC_shrunkLogFC, "shrunkLogFC_", ""),"cluster_", c(7,15),".pdf"), 
+                      output = paste0("~/Documents/Documents - nikolai/transcr_v_protein/", ifelse(plot_trnscript_zscore | plot_protein_tscore, "usingT-Z-Scores_", ""),
+                                      ifelse(proteins_determine_cluster_assignment, "proteins-determine-cluster-assignment_", ""), 
+                                      ifelse(swap_logFC_shrunkLogFC, "shrunkLogFC_", ""),
+                                      "transcriptome-vs-proteome_clusters7,15_(", polygon_interval ,"-QuantileRange).pdf"))
+
 
 #### transcr / prot concordance ####
 
@@ -1126,6 +1135,6 @@ panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
   text(0.5, 0.5, txt, cex = cex.cor * abs(r))
 }
 
-png(filename = "Documents/transcr_v_protein/pairs_plot.png", width = 1000, height = 1000)
+png(filename = "Documents/Documents - nikolai/transcr_v_protein/pairs_plot.png", width = 1000, height = 1000)
 pairs(tissue_sex_corrs, diag.panel = panel.hist, lower.panel = panel.cor, pch = 19, col = adjustcolor(1, 0.1), cex.cor = 80, prefix = "r =\n")
 dev.off()

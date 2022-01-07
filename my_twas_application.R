@@ -3,11 +3,15 @@ library(arrow)
 library(data.table)
 library(cmdstanr)
 library(posterior)
+library(caret)
+
 
 #functions
 removeNA <- function(x) x[!is.na(x)]
 
 ## essential metadata
+ldsc_directory <- "~/repos/ldsc/"
+gwas_dir <- "~/data/smontgom/imputed_gwas_hg38_1.1/"
 
 #eqtls
 motrpac_gtex_map = c('t30-blood-rna'='Whole Blood',
@@ -29,16 +33,11 @@ motrpac_gtex_map = c('t30-blood-rna'='Whole Blood',
                      't70-white-adipose'='Adipose - Subcutaneous')
 tissues <- names(motrpac_gtex_map)
 GTEx_SampleSize <- read.csv("~/data/smontgom/GTEx_SampleSizes.csv", header = T)
-gene_files <- list.files(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue, "/", cri, "/"))
-gene_files <- gene_files[grep("full", gene_files)]
 
 #general
-RSID_POS_MAP <- fread(paste0("~/data/smontgom/RSID_POS_MAP_",cri,".txt"))
 ENSG_coord <- read.table(file = "~/repos/ldsc/ENSG_coord.txt", header = T)
 
 #gwas
-ldsc_directory <- "~/repos/ldsc/"
-gwas_dir <- "~/data/smontgom/imputed_gwas_hg38_1.1/"
 gwas_summary_files <- list.files(gwas_dir)
 gwas_summary_files <- gwas_summary_files[grep(gwas_summary_files, pattern = ".txt.gz")]
 traitnames <- gwas_summary_files
@@ -112,6 +111,13 @@ tissue = tissues[1]
 cri = 1
 gwas_trait <- gwas_summary_files[1]
 gwas_traitname <- gsub(".txt.gz", "", gsub("imputed_", "", gwas_trait))
+
+#load RSID lookup
+RSID_POS_MAP <- fread(paste0("~/data/smontgom/RSID_POS_MAP_",cri,".txt"))
+
+#get gene info
+gene_files <- list.files(paste0(ldsc_directory, "/GTEx_v8_log2norm_sumstats/", tissue, "/", cri, "/"))
+gene_files <- gene_files[grep("full", gene_files)]
 gene_file <- gene_files[1]
 gene_name <- gsub("_full.sumstats.gz", "", gene_file)
 window_size <- 1E5
@@ -145,25 +151,53 @@ gwas_sub <- gwas_sub[!is.na(sign_flip),]
 plot(gene_sub$SLOPE, gwas_sub$effect_size)
 summary(lm(gene_sub$SLOPE~ gwas_sub$effect_size))
 
-
-
 #get LD matrix
 if(!dir.exists(paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname))){dir.create(paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname))}
 if(!dir.exists(paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname, "/chr", cri, "/"))){dir.create(paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname, "/chr", cri, "/"))}
+
+#write gene_IDs to file
 sink(file = paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname,"/chr", cri, "/", gene_name,"_", as.integer(window_size),"BP-Window_SNPs.txt"))
 cat(paste0(gene_sub$ID, "\n"), sep = "")
 sink()
-long <- fread("/Volumes/SSD500GB/all.EUR.hg38a/test_SNPs_LD.ld.gz")
+
+#ask plink to estimate LD matrix
+change_dir_command <- paste0("cd /Volumes/SSD500GB/all.EUR.hg38a/; ")
+initialize_profile <- paste0("source ~/.zshenv; ")
+run_plink_command <- paste0("plink --r gz --bfile all.EUR.hg38a --ld-window 1000000 --ld-window-r2 0 --ld-window-kb 10000 --extract ", 
+                            paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname,"/chr", cri, "/", 
+                                   gene_name,"_", as.integer(window_size),"BP-Window_SNPs.txt"),
+                            " --out ", paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname,"/chr", cri, "/", 
+                                              gene_name,"_", as.integer(window_size),"BP-Window_LD; "))
+system_command <- paste0(change_dir_command, initialize_profile, run_plink_command)
+system(system_command)
+
+
+long <- fread(paste0("/Volumes/SSD500GB/all.EUR.hg38a/", gwas_traitname,"/chr", cri, "/", 
+                     gene_name,"_", as.integer(window_size),"BP-Window_LD.ld.gz"))
+long <- long[long$SNP_A %in% gene_sub$ID & long$SNP_B %in% gene_sub$ID,]
 pos <- as.character( sort(unique(c(long$BP_A, long$BP_B))) )
 
 library(reshape2)
 irregular <- acast(long, BP_A ~ BP_B, value.var="R")  # wide format but irregular shape
 
-mat.r2 <- matrix(NA, length(pos), length(pos), dimnames=list(pos, pos))
-mat.r2[ rownames(irregular), colnames(irregular) ] <- irregular
-mat.r2[ lower.tri(mat.r2) ] <- t(mat.r2)[ lower.tri( t(mat.r2) ) ]
-diag(mat.r2) <- 1
-rm(tmp)
+mat.r <- matrix(NA, length(pos), length(pos), dimnames=list(pos, pos))
+mat.r[ rownames(irregular), colnames(irregular) ] <- irregular
+mat.r[ lower.tri(mat.r) ] <- t(mat.r)[ lower.tri( t(mat.r) ) ]
+diag(mat.r) <- 1
+sum(is.na(mat.r))
+# apply(is.na(mat.r), 1, sum)
+
+#remove SNPs in perfect LD
+to_keep <- setdiff(1:nrow(mat.r), sort(findCorrelation(mat.r, cutoff = 0.999)))
+mat.r <- mat.r[to_keep, to_keep]
+# ld1_snps <- which(mat.r == 1, arr.ind = T)
+# ld1_snps <- ld1_snps[apply(ld1_snps, 1, diff) != 0,]
+# table(ld1_snps[,1])
+eigen(mat.r)
+mat.r <- as.matrix(Matrix::nearPD(mat.r, corr = T)$mat)
+mat.r <- mat.r * 0.9 + diag(diag(mat.r)) * 0.1
+hist(solve(mat.r))
+
 #index genome vcf file
 # read_lines_gzip = function(infile, lines, outfile = NULL){
 #   lines = as.integer(lines)
@@ -178,7 +212,7 @@ rm(tmp)
 # gtex_dir <- "~/repos/gtex-pipeline/"
 # infile = paste0(gtex_dir, "GTEx_Analysis_2017-06-05_v8_WholeGenomeSeq_838Indiv_Analysis_Freeze.SHAPEIT2_phased.MAF01.vcf.gz")
 
-sapply(1:10, function(x) )
+# sapply(1:10, function(x) )
 lines = 1
 
 cat(read_lines_gzip(infile, 30000))

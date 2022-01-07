@@ -2,6 +2,71 @@
 library(data.table)
 library(MotrpacBicQC)
 
+#functions
+fig_label <- function(text, region="figure", pos="topleft", cex=NULL, shrinkX = 0.95, shrinkY = 0.95, ...) {
+  
+  region <- match.arg(region, c("figure", "plot", "device"))
+  pos <- match.arg(pos, c("topleft", "top", "topright", 
+                          "left", "center", "right", 
+                          "bottomleft", "bottom", "bottomright"))
+  
+  if(region %in% c("figure", "device")) {
+    ds <- dev.size("in")
+    # xy coordinates of device corners in user coordinates
+    x <- grconvertX(c(0, ds[1]), from="in", to="user")
+    y <- grconvertY(c(0, ds[2]), from="in", to="user")
+    
+    # fragment of the device we use to plot
+    if(region == "figure") {
+      # account for the fragment of the device that 
+      # the figure is using
+      fig <- par("fig")
+      dx <- (x[2] - x[1])
+      dy <- (y[2] - y[1])
+      x <- x[1] + dx * fig[1:2]
+      y <- y[1] + dy * fig[3:4]
+    } 
+  }
+  
+  # much simpler if in plotting region
+  if(region == "plot") {
+    u <- par("usr")
+    x <- u[1:2]
+    y <- u[3:4]
+  }
+  
+  sw <- strwidth(text, cex=cex) * 60/100
+  sh <- strheight(text, cex=cex) * 60/100
+  
+  x1 <- switch(pos,
+               topleft     =x[1] + sw, 
+               left        =x[1] + sw,
+               bottomleft  =x[1] + sw,
+               top         =(x[1] + x[2])/2,
+               center      =(x[1] + x[2])/2,
+               bottom      =(x[1] + x[2])/2,
+               topright    =x[2] - sw,
+               right       =x[2] - sw,
+               bottomright =x[2] - sw)
+  
+  y1 <- switch(pos,
+               topleft     =y[2] - sh,
+               top         =y[2] - sh,
+               topright    =y[2] - sh,
+               left        =(y[1] + y[2])/2,
+               center      =(y[1] + y[2])/2,
+               right       =(y[1] + y[2])/2,
+               bottomleft  =y[1] + sh,
+               bottom      =y[1] + sh,
+               bottomright =y[1] + sh)
+  
+  old.par <- par(xpd=NA)
+  on.exit(par(old.par))
+  
+  text(x1*shrinkX, y1*shrinkY, text, cex=cex, ...)
+  return(invisible(c(x,y)))
+}
+
 #load data
 enrich <- read.table("~/data/smontgom/pw-enrich-degs-per-tissue.tsv", sep = "\t", header = T)
 sapply(colnames(enrich), function(coli) length(unique(enrich[,coli])))
@@ -290,7 +355,7 @@ for(i in 1:ncol(tissue_specific_corrs)){
 #four pseudojaccards -- weighted, probability, average subtract out, average similarities from pairs-triplets-tetrads, x-entropy?
 
 #make frame
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/marginal_cumulative_contribution.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/marginal_cumulative_contribution.pdf"), 
                      width = 600 / 72, height = 600 / 72, family="Arial Unicode MS")
 par(mar = c(3,3,3,5), mfrow = c(1,1), xpd = NA)
 plot(1,1,xlim = c(0,max(enrich_sub$n_tissues_pathway_appears_in)), ylim = c(0,max(set_of_allTissues)), 
@@ -344,7 +409,7 @@ exp_dist_cols <- round(cumsum(c(1, dexp(1:100, rate = rate) / min(dexp(1:100, ra
 heatcols <- viridis::magma(max(exp_dist_cols))[exp_dist_cols]
 
 for(ji in 1:2){
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/", c("weighted-probability-jaccard", "mean-3way-jaccard")[ji],".pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/", c("weighted-probability-jaccard", "mean-3way-jaccard")[ji],".pdf"), 
                      width = 1800 / 72, height = 600 / 72, family="Arial Unicode MS")
 layout(cbind(matrix(1,6,6), matrix(c(sapply(list(2:7, 8:13, 14:19), function(n) rep(c(sapply(n, function(x) rep(x,2))),2))), nrow = 6, ncol = 12, byrow = T)))
 
@@ -395,8 +460,8 @@ plot(cex.lab = 1.5, x = 1:length(tissues), y = wiou_eigen$values, type = "l", xl
 dev.off()
 }
 
-pdftools::pdf_combine(paste0("~/Documents/tissue_pathway_enrichment/", c("weighted-probability-jaccard", "mean-3way-jaccard"),".pdf"), 
-                      output = paste0("~/Documents/tissue_pathway_enrichment/jaccard_alternatives.pdf"))
+pdftools::pdf_combine(paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/", c("weighted-probability-jaccard", "mean-3way-jaccard"),".pdf"), 
+                      output = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/jaccard_alternatives.pdf"))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 #### iterate over alternative line plots ####
@@ -406,7 +471,7 @@ for(li in 1:length(all_line_options)){
 
 line_matrix <- all_line_options[[li]]
 #make frame
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/", c("greedy", "optimal-ending", "optimal-starting", "average")[li], "_marginal_contribution.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/", c("greedy", "optimal-ending", "optimal-starting", "average")[li], "_marginal_contribution.pdf"), 
                      width = 600 / 72, height = 600 / 72, family="Arial Unicode MS")
 par(mar = c(3,4,3,1), mfrow = c(1,1), xpd = NA)
 plot(1,1,xlim = c(-2,17), ylim = c(0,max(line_matrix)), 
@@ -448,9 +513,9 @@ for(tissue in tissues){
 dev.off()
 }
 
-pdftools::pdf_combine(c(paste0("~/Documents/tissue_pathway_enrichment/marginal_cumulative_contribution.pdf"),
-                        paste0("~/Documents/tissue_pathway_enrichment/", c("greedy", "optimal-ending", "optimal-starting", "average"), "_marginal_contribution.pdf")), 
-                      output = paste0("~/Documents/tissue_pathway_enrichment/marginal_contribution_alternatives.pdf"))
+pdftools::pdf_combine(c(paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/marginal_cumulative_contribution.pdf"),
+                        paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/", c("greedy", "optimal-ending", "optimal-starting", "average"), "_marginal_contribution.pdf")), 
+                      output = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/marginal_contribution_alternatives.pdf"))
 
 
 #~~~~~~~~~~~~~~~#
@@ -505,7 +570,7 @@ my.text.panel <- function(labels) {
 var_lab <- paste0(round(MCAout$eig[,2]), "% of Variance")
 names(var_lab) <- letters[1:5]
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Pairs_Plot.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/MCA_Pairs_Plot.pdf"), 
                      width = 650 / 72, height = 550 / 72, family="Arial Unicode MS")
 
 pairs(MCAout$ind$coord, diag.panel = panel.1Dnames, tissue_names = rownames(MCAout$ind$coord), labels = letters[1:5],
@@ -559,21 +624,21 @@ text(0, 0.5, srt = 90,  xpd = NA, labels = "logistic PCA", cex = 1.2, font = 2)
 MCAout_zeros <- MCAout$var$contrib[grep(rownames(MCAout$var$contrib), pattern = "_0"),]
 MCAout_ones <- MCAout$var$contrib[grep(rownames(MCAout$var$contrib), pattern = "_1"),]
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis1.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/MCA_Axis1.pdf"), 
                      width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 1, top = 80, xtickslab.rt = 75)
 dev.off()
 
 # names(MCAout_ones[,1])[order(MCAout_ones[,1], decreasing = T)]
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis2.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/MCA_Axis2.pdf"), 
                      width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 2, top = 80, xtickslab.rt = 76)
 dev.off()
 
 # names(MCAout_ones[,2])[order(MCAout_ones[,2], decreasing = T)]
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/tissue_pathway_enrichment/MCA_Axis3.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/MCA_Axis3.pdf"), 
                      width = 1000 / 72, height = 400 / 72, family="Arial Unicode MS")
 factoextra::fviz_contrib(MCAout, choice = "var", axes = 3, top = 80, xtickslab.rt = 76)
 dev.off()
@@ -646,3 +711,154 @@ wordcloud(words = names(table(pathway_categories$category_name)), freq = table(p
 wordcloud(words = names(table(pathway_categories$subcategory_name)), freq = table(pathway_categories$subcategory_name), min.freq = 0.01,
           max.words=300, random.order=FALSE, rot.per=0,
           colors=brewer.pal(8, "Dark2"))
+
+
+#### make quick draft figure ####
+
+
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/enrichment_figure_draft.pdf.pdf"), 
+                     width = 1100 / 72, height = 550 / 72, family="Arial Unicode MS")
+
+layout(matrix(1:2, nrow=1))
+
+#average marginal contribution plot
+  li = which(names(all_line_options) == "average")
+  line_matrix <- all_line_options[[li]]
+  #make frame
+  par(mar = c(3,4,3,0), xpd = NA)
+  plot(1,1,xlim = c(-2,17), ylim = c(0,max(line_matrix)), 
+       col = "white", xaxt = "n", yaxt = "n", frame.plot = FALSE, xlab = "", ylab = "")
+  
+  #label figure
+  fig_label(text = "a)", region = "plot", cex = 3, shrinkX = 2, shrinkY = 1.075)
+  
+  #calculate more useful values
+  xylocs_tissue_names <- FField::FFieldPtRep(coords = cbind(0.5, line_matrix[,1] + rnorm(17, 0, 1E-3)),
+                                             rep.fact = 20, adj.max = 0.1, )
+  text(x = 17 / 2 - 0.5, y = max(line_matrix) * 1.075, 
+       labels = paste0(c("Greedy", "Optimal-Ending", "Optimal-Starting", "Average")[li], " Marginal Contribution"), cex = 2)
+  
+  #draw horiz axes
+  segments(x0 = -2, x1 = 17, y0 = 0, y1 = 0, lwd = 2)
+  segments(x0 = 1:17, x1 = 1:17, y0 = 0, y1 = -2, lwd = 2)
+  text(y = -1, x = 1:17, labels = 1:17, pos = 1)
+  text(labels = "Number of Tissues (Ending Count)", y = -7, x = max(enrich_sub$n_tissues_pathway_appears_in) / 2 + 3, pos = 1, cex = 1.75)
+  
+  #draw vert axis
+  segments(x0 = -2, x1 = -2, y0 = 0, y1 = max(line_matrix), lwd = 2)
+  ylocs_vertaxis <- seq(1, max(line_matrix), by = round(diff(seq(1, max(line_matrix), length.out = 10))[1]))
+  segments(y0 = ylocs_vertaxis, y1 = ylocs_vertaxis, x0 = -2, x1 = -2.15, lwd = 2)
+  text(x = -2.1, y = ylocs_vertaxis, labels = ylocs_vertaxis, pos = 2)
+  text(labels = "Number of Pathways Contributed at Given Tissue Count", x = -4, y = max(line_matrix) / 2, srt = 90, cex = 1.5)
+  
+  for(tissue in tissues){
+    
+    cumsumsub <- line_matrix[tissue,]
+    # cumsumsub <- rbind(c(0,0), cumsumsub)
+    lines(x = 1:length(cumsumsub), y = cumsumsub,
+          col = cols$Tissue[tissue], lwd = 2)
+    text(x = xylocs_tissue_names$x[rownames(xylocs_tissue_names) == tissue], cex = 1,
+         y = xylocs_tissue_names$y[rownames(xylocs_tissue_names) == tissue], labels = tissue, col = cols$Tissue[tissue], pos = 2)
+    segments(x0 = 1, y0 = cumsumsub[1], 
+             x1 = xylocs_tissue_names$x[rownames(xylocs_tissue_names) == tissue] - 0.15, 
+             y1 = xylocs_tissue_names$y[rownames(xylocs_tissue_names) == tissue],
+             col = cols$Tissue[tissue], lty = 3)
+  }
+
+#MCA pairs plot
+  xs = 100
+  ys = 100
+  nd <- ncol(MCAout$ind$coord)
+  nticks <- 5
+  var_lab <- paste0(tetra_propvar[1:nd], "% of Variance")
+  par(mar = c(1,1,3,1), xpd = NA)
+  plot(-1E9,-1E9,xlim = c(0,xs), ylim = c(0,ys), xaxt = "n", yaxt = "n", col = 0, xlab= "", ylab = "", frame.plot = F)
+  #label figure
+  fig_label(text = "b)", region = "plot", cex = 3, shrinkX = 100, shrinkY = 1.07)
+  
+  for(ri in 1:nd){
+    
+    rlim <- seq(0,ys,length.out = nd+1)[c(ri,ri+1)]
+    rlim <- rlim + c(diff(rlim)/20,-diff(rlim)/20) * par("din")[1] / par("din")[2]
+    rlim_pts <- rlim + c(diff(rlim)/20,-diff(rlim)/20)
+    
+    for(ci in 1:nd){
+      clim <- seq(0,xs,length.out = nd+1)[c(ci,ci+1)]
+      clim <- clim + c(diff(clim)/20,-diff(clim)/20)
+      clim_pts <- clim + c(diff(clim)/20,-diff(clim)/20)
+      
+      #legend
+      if(ri == nd & ci == 1){
+        xl = clim[1]- xs / 45; xr = clim[1] - xs / 100; yb = rlim[1]; yt = rlim[2]
+        rect(xpd = NA, col = cols$Tissue[-length(cols$Tissue)], border = NA,
+             xleft = rep(xl, length(cols$Tissue)-1),
+             xright = rep(xr, length(cols$Tissue)-1),
+             ybottom = seq(yb, yt, length.out = length(cols$Tissue)-1) - (yt-yb)/(length(cols$Tissue) - 2)/2,
+             ytop = seq(yb, yt, length.out = length(cols$Tissue)-1) + (yt-yb)/(length(cols$Tissue) - 2)/2)
+        text(labels = names(cols$Tissue[-length(cols$Tissue)]), seq(yb, yt, length.out = length(cols$Tissue)-1), pos = 2, x = (xl + xr) / 2, xpd = NA, cex = 0.4)
+        text(xs / 2, ys * 1.05, xpd = NA, labels = "Multiple Coordinates Analysis (MCA)", cex = 2, font = 2, pos = 3)
+      }
+      
+      #tick marks
+      if(ri == 1 & (ci %% 2) == 1){
+        orig_xlim = range(MCAout$ind$coord[,ci])
+        tick_vals <- seq(orig_xlim[1], orig_xlim[2], length.out = nticks)
+        tick_locs <- (tick_vals - min(tick_vals)) / diff(orig_xlim) * diff(clim_pts) + clim_pts[1]
+        ticks_to_label <- (1:nticks)[(1:nticks) %% 2 == 1]
+        segments(x0 = tick_locs, x1 = tick_locs, y0 = rlim[1], y1 = rlim[1] - ys / 100 * par("din")[1] / par("din")[2])
+        text(x = tick_locs[ticks_to_label], y = rlim[1] - ys / 100 * par("din")[1] / par("din")[2], labels = round(tick_vals[ticks_to_label], 1), 
+             pos = 1, cex = 0.75, xpd = NA)
+      }
+      
+      if(ri == nd & (ci %% 2) == 0){
+        orig_xlim = range(MCAout$ind$coord[,ci])
+        tick_vals <- seq(orig_xlim[1], orig_xlim[2], length.out = nticks)
+        tick_locs <- (tick_vals - min(tick_vals)) / diff(orig_xlim) * diff(clim_pts) + clim_pts[1]
+        ticks_to_label <- (1:nticks)[(1:nticks) %% 2 == 1]
+        segments(x0 = tick_locs, x1 = tick_locs, y0 = rlim[2], y1 = rlim[2] + ys / 100 * par("din")[1] / par("din")[2])
+        text(x = tick_locs[ticks_to_label], y = rlim[2] + ys / 100 * par("din")[1] / par("din")[2], labels = round(tick_vals[ticks_to_label], 1), 
+             pos = 3, cex = 0.75, xpd = NA)  
+      }
+      
+      if(ci == 1 & (ri %% 2) == 0){
+        orig_ylim = range(MCAout$ind$coord[,(nd-ri+1)])
+        tick_vals <- seq(orig_ylim[1], orig_ylim[2], length.out = nticks)
+        tick_locs <- (tick_vals - min(tick_vals)) / diff(orig_ylim) * diff(rlim_pts) + rlim_pts[1]
+        ticks_to_label <- (1:nticks)[(1:nticks) %% 2 == 1]
+        segments(y0 = tick_locs, y1 = tick_locs, x0 = clim[1], x1 = clim[1] - xs / 100)
+        text(y = tick_locs[ticks_to_label], x = clim[1] - xs / 100, labels = round(tick_vals[ticks_to_label], 1), pos = 2, cex = 0.75, xpd = NA)
+      }      
+      
+      if(ci == nd & (ri %% 2) == 1){
+        orig_ylim = range(MCAout$ind$coord[,(nd-ri+1)])
+        tick_vals <- seq(orig_ylim[1], orig_ylim[2], length.out = nticks)
+        tick_locs <- (tick_vals - min(tick_vals)) / diff(orig_ylim) * diff(rlim_pts) + rlim_pts[1]
+        ticks_to_label <- (1:nticks)[(1:nticks) %% 2 == 1]
+        segments(y0 = tick_locs, y1 = tick_locs, x0 = clim[2], x1 = clim[2] + xs / 100)
+        text(y = tick_locs[ticks_to_label], x = clim[2] + xs / 100, labels = round(tick_vals[ticks_to_label], 1), pos = 4, cex = 0.75, xpd = NA)
+      }
+      
+      #diag column text
+      if((nd-ri+1) == ci){
+        orig_xlim = range(MCAout$ind$coord[,ci])
+        orig_ylim = range(MCAout$ind$coord[,(nd-ri+1)])
+        
+        text(x = mean(clim_pts), labels = rownames(MCAout$ind$coord), cex = 0.75,
+               y = (MCAout$ind$coord[,(nd-ri+1)] - min(MCAout$ind$coord[,(nd-ri+1)])) / diff(orig_ylim) * diff(rlim_pts) + rlim_pts[1], xpd= NA,
+               col = adjustcolor(cols$Tissue[match(rownames(MCAout$ind$coord), names(cols$Tissue))], 1))
+        rect(xleft = clim[1], xright = clim[2], ybottom = rlim[1], ytop = rlim[2])
+        text(labels = var_lab[(nd-ci+1)], x = rlim_pts[1] - diff(rlim_pts) / 20, y = mean(clim), srt = 90, cex = 0.675, xpd = NA)
+        
+      } else { #off-diag cells
+        orig_xlim = range(MCAout$ind$coord[,ci])
+        orig_ylim = range(MCAout$ind$coord[,(nd-ri+1)])
+        
+        points((MCAout$ind$coord[,ci] - min(MCAout$ind$coord[,ci])) / diff(orig_xlim) * diff(clim_pts) + clim_pts[1], 
+               (MCAout$ind$coord[,(nd-ri+1)] - min(MCAout$ind$coord[,(nd-ri+1)])) / diff(orig_ylim) * diff(rlim_pts) + rlim_pts[1], xpd= NA,
+               pch = 19, col = adjustcolor(cols$Tissue[match(rownames(MCAout$ind$coord), names(cols$Tissue))], 0.75))
+        rect(xleft = clim[1], xright = clim[2], ybottom = rlim[1], ytop = rlim[2])
+      }
+    }
+  }
+  
+dev.off()

@@ -170,14 +170,22 @@ lines2 <- function(x, y, lwds, col = 1){
   }
 }
 
-par(mfrow = c(2,3))
+#### just the plotting ####
+
+cairo_pdf("~/Documents/pass1b_fig8_rat-man_sign_replication.pdf", width = 800 / 72, height = 500 / 72, family="Arial Unicode MS")
+par(mfrow = c(2,3), mar = c(4,4,4,2))
 for(sex in c("male", "female")){
   for(tissue in names(merged_results)){
-    plot(100, 100, xlim = range(-apply(log_pval_windows, 1, mean)), 
+    plot(100, 100, xlim = range(-apply(log_pval_windows, 1, mean)), cex.lab = 1.35, cex.axis = 1.3,
          ylim = c(0,1), xlab = latex2exp::TeX("$-log_{10}(pval)$"), ylab = "proportion of matching signs")
+    
+    #horizontal line at 0.5
+    abline(h = 0.5, lwd = 2, col = "grey50", lty = 2)
+    
+    #tissue and sex labels
     text(tissue, x = mean(range(-apply(log_pval_windows, 1, mean))), y = 1.05, xpd = NA, 
-         col = tissue_cols[tissue], pos = 3, cex = 2)
-    text(x = max(-apply(log_pval_windows, 1, mean)), y = 1.035, cex = 2.5, font = 2, pos = 1,
+         col = tissue_cols[tissue], pos = 3, cex = 2, font = 3)
+    text(x = max(-apply(log_pval_windows, 1, mean)) - c(male = diff(par("usr")[1:2]) * 0.01, female = 0)[sex], y = 1.04, cex = 2.5, font = 2, pos = 1,
          labels = c(male = "\u2642", female = "\u2640")[sex], col = sex_cols[sex])
     
     
@@ -190,9 +198,9 @@ for(sex in c("male", "female")){
       
     }
     if(sex == "female" & tissue == names(merged_results)[length(merged_results)]){
-      legend( x = par("usr")[2] - diff(par("usr")[1:2]) * 0.205, 
-              y = par("usr")[3] + diff(par("usr")[3:4]) * 0.3, legend = paste0(c(2^(0:3)), "w"), 
-             lwd = rep(2, 4), col = group_cols[paste0(c(2^(0:3)), "w")])
+      legend( x = par("usr")[2] - diff(par("usr")[1:2]) * 0.375, 
+              y = par("usr")[3] + diff(par("usr")[3:4]) * 0.4, legend = c("50% match", paste0(c(2^(0:3)), "w")), 
+             lwd = rep(2, 5), col = c("grey50", group_cols[paste0(c(2^(0:3)), "w")]), lty = c(2,1,1,1,1))
     }
     
     #n genes in each tissue
@@ -201,4 +209,4 @@ for(sex in c("male", "female")){
     
   }
 }
-     
+dev.off()

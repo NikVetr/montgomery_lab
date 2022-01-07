@@ -3,10 +3,56 @@ library(MASS)
 library(mvtnorm)
 library(cmdstanr)
 library(posterior)
+library(TESS)
+library(adephylo)
+
+#overall graphical params
+par(mfrow = c(2,3))
+
+
+#specify a few functions
+rlkj <- function (K, eta = 1) {
+  alpha <- eta + (K - 2)/2
+  r12 <- 2 * rbeta(1, alpha, alpha) - 1
+  R <- matrix(0, K, K)
+  R[1, 1] <- 1
+  R[1, 2] <- r12
+  R[2, 2] <- sqrt(1 - r12^2)
+  if (K > 2) 
+    for (m in 2:(K - 1)) {
+      alpha <- alpha - 0.5
+      y <- rbeta(1, m/2, alpha)
+      z <- rnorm(m, 0, 1)
+      z <- z/sqrt(crossprod(z)[1])
+      R[1:m, m + 1] <- sqrt(y) * z
+      R[m + 1, m + 1] <- sqrt(1 - y)
+    }
+  return(crossprod(R))
+}
 
 #simulate data
-n = 100
-p = 5
+
+#tree-like covariance
+speciation <- function(t){
+  return(5 / (1 + (20)*exp(-0.75*t) ))
+}
+rbf <- function(x1, x2, params = list(s = 1, l = 1)){
+  params$s^2*exp(-(x2-x1)^2/(2*params$l^2))
+}
+brownian <- function(x1, x2, params = list(s=1)){return(params$s^2*min(x1, x2))}
+tree <- tess.sim.taxa(n = 1,
+                      nTaxa = n,
+                      max = 1E4,
+                      lambda = speciation,
+                      mu = 0)[[1]]
+vcov_tree <- vcv.phylo(tree)
+# dist_tree <- as.matrix(distTips(tree))
+# (sapply(1:n, function(ri) sapply(1:n, function(ci) brownian(dist_tree[ri], dist_tree[ci]))))
+vcov_tree <- vcov_tree / vcov_tree[1,1] * sigma2
+
+#population params
+n = 200
+p = 50
 b_var <- 1
 # b <- rexp(p, rate = 1 / sqrt(b_var)) * (1-rbinom(p,1,0.5)*2)
 b <- rnorm(p, sd = sqrt(b_var)) 
@@ -14,9 +60,13 @@ b[sample(1:p, size = p / 10)] <- rnorm(p / 10, mean = 0, sd = sqrt(b_var * 100))
 
 x <- matrix(rnorm(n*p),n,p)
 corr_x <- 0.5
-x <- t(chol(diag(n)*(1-corr_x)+corr_x)) %*% x
+corrmat_x <- diag(n)*(1-corr_x)+corr_x
+# corrmat_x <- cov2cor(vcov_tree)
+x <- t(chol(corrmat_x)) %*% x
 sigma2 <- 25
-e <- rnorm(n, sd = sqrt(sigma2))
+e <- rnorm(n, sd = 1)
+# e <- t(vcov_tree) %*% e
+hist(e)
 a = rnorm(1, sd = 10)
 y <- a + x %*% b + e
 
@@ -27,6 +77,7 @@ ols_bs_mr_cf <- lm(y ~ 1 + x)$coefficients[-1]
 
 #check understanding
 cov_x <- cov(x) #true sample cov(x)
+cov_x <- vcov_tree #true sample cov(x)
 eig <- eigen(cov(x))
 v <- eig$vectors
 l <- eig$values
@@ -34,7 +85,7 @@ mean_center <- function(x) sapply(1:ncol(x), function(ci) x[,ci] - mean(x[,ci]))
 
 #compute PCs
 PCs <- mean_center(x) %*% v
-n_PCs_to_include <- 5
+n_PCs_to_include <- 3
 partial_rank_cov_x <- v[,1:n_PCs_to_include] %*% diag(l[1:n_PCs_to_include]) %*% t(v[,1:n_PCs_to_include])
 
 ols_bs <- sapply(1:p, function(i) lm(y ~ 1 + x[,i] + PCs[,1:n_PCs_to_include])$coefficients[2])
@@ -49,12 +100,12 @@ ols_bs_mr <- c(pracma::pinv(cov_x_to_use) %*% cov_x_y)
 # plot(b, ols_bs_mr, ylim = range(c(ols_bs, ols_bs_mr)));abline(0,1)
 plot(ols_bs_mr_cf, ols_bs_mr, ylim = range(c(ols_bs, ols_bs_mr)));abline(0,1)
 
-
+ols_bs_noPCs_true_mr <- lm(y ~ x)$coefficients[-1]
 ols_bs_noPCs_mr <- c(pracma::pinv(cov_x) %*% (ols_bs_noPCs * apply(x, 2, var)))
-par(mfrow = c(2,3))
 plot(b, ols_bs); abline(0,1)
 plot(b, ols_bs_noPCs); abline(0,1)
 plot(b, ols_bs_noPCs_mr); abline(0,1)
+plot(b, ols_bs_noPCs_true_mr); abline(0,1)
 
 
 # cor(b, ols_bs)

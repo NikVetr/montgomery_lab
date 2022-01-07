@@ -5467,8 +5467,9 @@ for(tissue_i in names(deg_eqtl_list_TWAS_cluster_subset)){
 n_deg_sigtwas_intersect <- n_deg_sigtwas_intersect[,order(apply(n_deg_sigtwas_intersect, 2, sum), decreasing = T)]
 n_deg_sigtwas_intersect <- n_deg_sigtwas_intersect[,apply(n_deg_sigtwas_intersect, 2, sum) != 0]
 
-#now plot it
-par(xpd = T)
+#### now plot the intersect of DEGs & TWAS hits ####
+cairo_pdf("~/Documents/pass1b_fig8_DEG-TWAS_Intersect.pdf", width = 1000 / 72, height = 500 / 72)
+par(xpd = T, mar = c(4,0.5,4,2.5))
 plot(1, xaxt="n",yaxt="n",bty="n",pch="",ylab="",xlab="", main="", sub="", xlim= c(-5,ncol(n_deg_sigtwas_intersect)), ylim = c(-5,nrow(n_deg_sigtwas_intersect)))
 heatmap_cols <- viridisLite::viridis(n = max(n_deg_sigtwas_intersect)*100+1)
 heatmap_cols <- heatmap_cols[round(log(1:max(n_deg_sigtwas_intersect)) / log(max(n_deg_sigtwas_intersect)) * max(n_deg_sigtwas_intersect) * 100 + 1)]
@@ -5500,15 +5501,15 @@ for(i in 0:max(n_deg_sigtwas_intersect)){
 text(labels = latex2exp::TeX("n_{intersect}"), pos = 3, font = 2,
      x = ncol(n_deg_sigtwas_intersect) + 2, y = nrow(n_deg_sigtwas_intersect) + 0.5)
 text(latex2exp::TeX("number of genes in monotonic, sex-homogenous clusters and w/ Bonferroni significant TWAS at $\\alpha$ = 0.05"), 
-     x = 22, y = nrow(n_deg_sigtwas_intersect) + 0.5, pos = 3, cex = 1.25, font = 2)
+     x = 22, y = nrow(n_deg_sigtwas_intersect) + 0.5, pos = 3, cex = 1.35, font = 2)
+
+dev.off()
 
 
 
 
 
-
-
-
+#### now plot the proportion of DEGs & TWAS hits ####
 #now do the proportion
 deg_sigtwas_proportion <- array(NA, dim = c(length(deg_eqtl_list_TWAS_cluster_subset), length(salient_twas), 4, 3, 2), 
                                 dimnames = list(names(deg_eqtl_list_TWAS_cluster_subset), salient_twas, paste0(2^(0:3), "w"), c("p", "n", "genes"), c("male", "female")))
@@ -5562,6 +5563,8 @@ for(tissue_i in names(deg_eqtl_list_TWAS_cluster_subset)){
   
 }
 
+
+#### the actual plotting ####
 deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "type_1_diabetes", ignore.case = T)],,"p",sex]
 deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "reported_hypertension", ignore.case = T)],,"p",sex]
 deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "heart_problems", ignore.case = T)],,"n",sex]
@@ -5569,8 +5572,8 @@ deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "Body_mass_ind
 deg_sigtwas_proportion[,salient_twas[grep(salient_twas, pattern = "Body_fat_percentage", ignore.case = T)],,"p",sex]
 
 #plot lines for proportions
-trait <- salient_twas[grep(salient_twas, pattern = "reported_hypertension", ignore.case = T)][1]
 trait <- salient_twas[grep(salient_twas, pattern = "Body_fat_percentage", ignore.case = T)][1]
+trait <- salient_twas[grep(salient_twas, pattern = "reported_hypertension", ignore.case = T)][1]
 
 cols = list(Tissue=tissue_cols[names(deg_eqtl_list)], 
             Time=group_cols[paste0(c(1,2,4,8), "w")],
@@ -5579,7 +5582,7 @@ tissue_names <- sapply(strsplit(names(cols$Tissue), "-"), function(x) paste0(x[i
 
 
 
-
+cairo_pdf(paste0("~/Documents/pass1b_fig8_DE_protective_effect_in_",trait,".pdf"), width = 1300 / 72, height = 500 / 72, family="Arial Unicode MS")
 par(mfrow = c(1,2), xpd = NA, mar = c(5,5,5,17))
 lwd <- 3
 for(sex in c("male", "female")){
@@ -5688,7 +5691,7 @@ for(sex in c("male", "female")){
   
 }
 text(trait_categories$new_Phenotype[trait_categories$Tag == trait], x =0, y = 1.175, cex = 2, font = 2)
-
+dev.off()
 
 #make data table for nicole 
 # save(deg_eqtl_list_TWAS, file = "~/data/smontgom/deg_eqtl_twas.RData")
@@ -5880,6 +5883,25 @@ EZ_PZ <- lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti
     x = (deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z[deg_eqtl_list[[tissue]]$comparison_group == ti]), 
     probs = qs2use, na.rm = T)))
 
+
+relative_expression_data <- 
+  list(phenotypic_expression = lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+    sapply(tissues, function(tissue) quantile(
+      x = deg_eqtl_list[[tissue]]$phenotypic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == ti], 
+      probs = qs2use, na.rm = T))),
+      
+      genetic_expression = lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+    sapply(tissues, function(tissue) quantile(
+      x = deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == ti], 
+      probs = qs2use, na.rm = T))),
+      
+      genetic_expression_p2SE = lapply(setNames(paste0(2^(0:3), "w"),paste0(2^(0:3), "w")), function(ti) 
+    sapply(tissues, function(tissue) quantile(
+      x = (deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z[deg_eqtl_list[[tissue]]$comparison_group == ti]), 
+      probs = qs2use, na.rm = T)))
+  )
+save(file = "~/data/smontgom/relative_expression_motrpac_gtex", relative_expression_data)
+
 tissue <- tissues[3]
 plot(deg_eqtl_list[[tissue]]$logFC, deg_eqtl_list[[tissue]]$genetic_expression_plus2SE_Z)
 
@@ -5889,12 +5911,18 @@ logit <- function(p) log(p / (1-p))
 invlogit <- function(x) exp(x)/(1+exp(x))
 squish_middle_p <- function(p,f) invlogit(logit(p)*f)
 unsquish_middle_p <- function(p,f) invlogit(logit(p)/f)
-squish_middle_x <- function(x,f) log(abs(x)+1)/log(f)*sign(x)
-unsquish_middle_x <- function(x,f) (f^(abs(x))-1)*sign(x)
+# squish_middle_x <- function(x,f) log(abs(x)+1)/log(f)*sign(x)
+# unsquish_middle_x <- function(x,f) (f^(abs(x))-1)*sign(x)
+squish_middle_x <- function(x,f) asinh(x*f)
+unsquish_middle_x <- function(x,f) sinh(x)/f
 redistribute <- function(x, incr){
   new_x <- seq(from = min(x), length.out = length(x), by = incr)[rank(x)]
   new_x - max(new_x) + max(x)
 }
+
+load("~/data/smontgom/relative_expression_motrpac_gtex")
+
+EZ_PZ <- relative_expression_data[[1]]
 
 ti = "8w"
 f_p <- 0.4
