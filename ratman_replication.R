@@ -92,16 +92,23 @@ library(MotrpacBicQC)
 
 #### load Nicole's table ####
 load("~/data/smontgom/pass1b-human-metaanalysis__merged_results.RData")
-lapply(setNames(c("male", "female"), c("male", "female")), function(sex){
-  sapply(names(merged_results), function(tissue){
+sign_match <- lapply(setNames(c("male", "female"), c("male", "female")), function(sex){
+  sexmatch <- sapply(names(merged_results), function(tissue){
     sapply(paste0(c(2^(0:3)), "w"), function(time) {
       dat <- as.data.frame(merged_results[[tissue]])
       subdat <- dat[dat$comparison_group == time & dat$sex == sex,]
-      mean(sign(subdat$logFC) == sign(subdat$human_effect))
+      round(mean(sign(subdat$logFC) == sign(subdat$human_effect)), 3)
       # length(unique(subdat$human_gene_symbol))
     })
   })
+  colnames(sexmatch) <- MotrpacBicQC::bic_animal_tissue_code$abbreviation[match(colnames(sexmatch), MotrpacBicQC::bic_animal_tissue_code$tissue_name_release)]
+  sexmatch
 })
+
+# sign_match <- lapply(setNames(c("male", "female"), c("male", "female")), 
+#                               function(sex) round(sign_match[[sex]]*100, 1))
+
+sign_match
 
 #also read in the raw data?
 muscle <- read.csv(file = "~/data/smontgom/longterm_muscle.csv")
@@ -172,7 +179,7 @@ lines2 <- function(x, y, lwds, col = 1){
 
 #### just the plotting ####
 
-cairo_pdf("~/Documents/pass1b_fig8_rat-man_sign_replication.pdf", width = 800 / 72, height = 500 / 72, family="Arial Unicode MS")
+cairo_pdf("~/Documents/Documents - nikolai/pass1b_fig8_rat-man_sign_replication.pdf", width = 800 / 72, height = 500 / 72, family="Arial Unicode MS")
 par(mfrow = c(2,3), mar = c(4,4,4,2))
 for(sex in c("male", "female")){
   for(tissue in names(merged_results)){
@@ -201,6 +208,11 @@ for(sex in c("male", "female")){
       legend( x = par("usr")[2] - diff(par("usr")[1:2]) * 0.375, 
               y = par("usr")[3] + diff(par("usr")[3:4]) * 0.4, legend = c("50% match", paste0(c(2^(0:3)), "w")), 
              lwd = rep(2, 5), col = c("grey50", group_cols[paste0(c(2^(0:3)), "w")]), lty = c(2,1,1,1,1))
+      
+      for(lwdi in 1:(length(lwds) - 1)){
+        segments
+      }
+      
     }
     
     #n genes in each tissue

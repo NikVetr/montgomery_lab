@@ -716,7 +716,7 @@ wordcloud(words = names(table(pathway_categories$subcategory_name)), freq = tabl
 #### make quick draft figure ####
 
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/enrichment_figure_draft.pdf.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/tissue_pathway_enrichment/enrichment_figure_draft.pdf"), 
                      width = 1100 / 72, height = 550 / 72, family="Arial Unicode MS")
 
 layout(matrix(1:2, nrow=1))
@@ -779,7 +779,7 @@ layout(matrix(1:2, nrow=1))
   for(ri in 1:nd){
     
     rlim <- seq(0,ys,length.out = nd+1)[c(ri,ri+1)]
-    rlim <- rlim + c(diff(rlim)/20,-diff(rlim)/20) * par("din")[1] / par("din")[2]
+    rlim <- rlim + c(diff(rlim)/20,-diff(rlim)/20)# * par("din")[1] / par("din")[2]
     rlim_pts <- rlim + c(diff(rlim)/20,-diff(rlim)/20)
     
     for(ci in 1:nd){
@@ -847,7 +847,7 @@ layout(matrix(1:2, nrow=1))
                y = (MCAout$ind$coord[,(nd-ri+1)] - min(MCAout$ind$coord[,(nd-ri+1)])) / diff(orig_ylim) * diff(rlim_pts) + rlim_pts[1], xpd= NA,
                col = adjustcolor(cols$Tissue[match(rownames(MCAout$ind$coord), names(cols$Tissue))], 1))
         rect(xleft = clim[1], xright = clim[2], ybottom = rlim[1], ytop = rlim[2])
-        text(labels = var_lab[(nd-ci+1)], x = rlim_pts[1] - diff(rlim_pts) / 20, y = mean(clim), srt = 90, cex = 0.675, xpd = NA)
+        text(labels = var_lab[(nd-ci+1)], x = rlim_pts[1] + diff(rlim_pts) / 50, y = mean(clim), srt = 90, cex = 0.675, xpd = NA)
         
       } else { #off-diag cells
         orig_xlim = range(MCAout$ind$coord[,ci])
