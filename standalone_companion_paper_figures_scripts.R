@@ -19,222 +19,8 @@ library(doParallel)
 library(pracma)
 
 
-#specify functions
-polar2cart <- function(t, r){
-  return(c(r*cos(t), r * sin(t)))
-}
-plotMatrix <- function(mobject, size, location, lwd = 2, lwd_inner = 1.5, grid = T, font = 1, cex = 1, rownames = T, colnames = T, title = T, title.label = "Matrix Object"){
-  lines(rbind(location, location + c(0,size[2])), lwd = lwd)
-  lines(rbind(location, location + c(size[1]/8,0)), lwd = lwd)
-  lines(rbind(location + c(0, size[2]), location + c(size[1]/8,size[2])), lwd = lwd)
-  lines(rbind(location + c(size[1],0), location + size), lwd = lwd)
-  lines(rbind(location + size, location + size - c(size[1]/8,0)), lwd = lwd)
-  lines(rbind(location + c(size[1],0), location + c(size[1],0) - c(size[1]/8,0)), lwd = lwd)
-  if(grid == T){
-    for(i in 1:(dim(mobject)[1]-1)){
-      lines(rbind(location + c(0,i*size[2]/dim(mobject)[1]), location + c(size[1], i*size[2]/dim(mobject)[1])), lwd = lwd_inner)
-    }
-    for(j in 1:(dim(mobject)[2]-1)){
-      lines(rbind(location + c(j*size[1]/dim(mobject)[2],0), location + c(j*size[1]/dim(mobject)[2], size[2])), lwd = lwd_inner)
-    }
-  }
-  if(class(mobject[1,1]) != "expression" & class(mobject[1,1]) != "character"){mobject <- matrix(as.character(mobject), nrow = dim(mobject)[1], ncol = dim(mobject)[2])}
-  for(i in 1:(dim(mobject)[1])){
-    for(j in 1:dim(mobject)[2]){
-      text(labels = mobject[i,j], x = location[1] + (j-1/2)*size[1]/dim(mobject)[2], y = location[2] + size[2] - (i-1/2)*size[2]/dim(mobject)[1], font = font, cex = cex)
-    }
-  }
-  if(title){
-    text(title.label, x = location[1] + size[1]/2, y = location[2] + size[2] + strheight(title.label, font = 2, cex = 1.5)/1.5, cex = 1.5, font = 2)
-  }
-  if(rownames){
-    for(i in 1:dim(mobject)[1]){
-      text(rownames(mobject)[i], x = location[1] - strwidth(rownames(mobject)[i])/2 - size[1]/(ncol(mobject)*6), y = location[2] + size[2] - (i-1/2)*size[2]/dim(mobject)[2])
-    }
-  }
-  if(colnames){
-    for(i in 1:dim(mobject)[1]){
-      text(colnames(mobject)[i], x = location[1] + (i-1/2)*size[1]/dim(mobject)[1], y = location[2] - strheight(colnames(mobject)[i])/2- size[2]/(nrow(mobject)*6))
-    }
-  }
-}
-fig_label <- function(text, region="figure", pos="topleft", cex=NULL, shrinkX = 0.95, shrinkY = 0.95, ...) {
-  
-  region <- match.arg(region, c("figure", "plot", "device"))
-  pos <- match.arg(pos, c("topleft", "top", "topright", 
-                          "left", "center", "right", 
-                          "bottomleft", "bottom", "bottomright"))
-  
-  if(region %in% c("figure", "device")) {
-    ds <- dev.size("in")
-    # xy coordinates of device corners in user coordinates
-    x <- grconvertX(c(0, ds[1]), from="in", to="user")
-    y <- grconvertY(c(0, ds[2]), from="in", to="user")
-    
-    # fragment of the device we use to plot
-    if(region == "figure") {
-      # account for the fragment of the device that 
-      # the figure is using
-      fig <- par("fig")
-      dx <- (x[2] - x[1])
-      dy <- (y[2] - y[1])
-      x <- x[1] + dx * fig[1:2]
-      y <- y[1] + dy * fig[3:4]
-    } 
-  }
-  
-  # much simpler if in plotting region
-  if(region == "plot") {
-    u <- par("usr")
-    x <- u[1:2]
-    y <- u[3:4]
-  }
-  
-  sw <- strwidth(text, cex=cex) * 60/100
-  sh <- strheight(text, cex=cex) * 60/100
-  
-  x1 <- switch(pos,
-               topleft     =x[1] + sw, 
-               left        =x[1] + sw,
-               bottomleft  =x[1] + sw,
-               top         =(x[1] + x[2])/2,
-               center      =(x[1] + x[2])/2,
-               bottom      =(x[1] + x[2])/2,
-               topright    =x[2] - sw,
-               right       =x[2] - sw,
-               bottomright =x[2] - sw)
-  
-  y1 <- switch(pos,
-               topleft     =y[2] - sh,
-               top         =y[2] - sh,
-               topright    =y[2] - sh,
-               left        =(y[1] + y[2])/2,
-               center      =(y[1] + y[2])/2,
-               right       =(y[1] + y[2])/2,
-               bottomleft  =y[1] + sh,
-               bottom      =y[1] + sh,
-               bottomright =y[1] + sh)
-  
-  old.par <- par(xpd=NA)
-  on.exit(par(old.par))
-  
-  text(x1*shrinkX, y1*shrinkY, text, cex=cex, ...)
-  return(invisible(c(x,y)))
-}
-shadowtext <- function(x, y=NULL, labels, col='white', bg='black',
-                       theta= seq(pi/4, 2*pi, length.out=8), r=0.1, ... ) {
-  
-  
-  
-  xy <- xy.coords(x,y)
-  
-  xo <- r*strwidth('A')
-  
-  yo <- r*strheight('A')
-  
-  for (i in theta) {
-    
-    text( xy$x + cos(i)*xo, xy$y + sin(i)*yo, 
-          
-          labels, col=bg, ... )
-    
-  }
-  
-  text(xy$x, xy$y, labels, col=col, ... )
-  
-}
-addImg <- function(
-  obj, # an image file imported as an array (e.g. png::readPNG, jpeg::readJPEG)
-  x = NULL, # mid x coordinate for image
-  y = NULL, # mid y coordinate for image
-  width = NULL, # width of image (in x coordinate units)
-  interpolate = TRUE # (passed to graphics::rasterImage) A logical vector (or scalar) indicating whether to apply linear interpolation to the image when drawing. 
-){
-  if(is.null(x) | is.null(y) | is.null(width)){stop("Must provide args 'x', 'y', and 'width'")}
-  USR <- par()$usr # A vector of the form c(x1, x2, y1, y2) giving the extremes of the user coordinates of the plotting region
-  PIN <- par()$pin # The current plot dimensions, (width, height), in inches
-  DIM <- dim(obj) # number of x-y pixels for the image
-  ARp <- DIM[1]/DIM[2] # pixel aspect ratio (y/x)
-  WIDi <- width/(USR[2]-USR[1])*PIN[1] # convert width units to inches
-  HEIi <- WIDi * ARp # height in inches
-  HEIu <- HEIi/PIN[2]*(USR[4]-USR[3]) # height in units
-  rasterImage(image = obj, 
-              xleft = x-(width/2), xright = x+(width/2),
-              ybottom = y-(HEIu/2), ytop = y+(HEIu/2), 
-              interpolate = interpolate)
-}
-polarp <- function (t, r, col = 1, pch = 1, cex = 1, center = c(0,0)) {
-  n <- length(t)
-  z <- cbind(t, r)
-  xy <- pol2cart(z)
-  if (n == 1) 
-    dim(xy) <- c(1, 2)
-  hy <- hypot(xy[, 1], xy[, 2])
-  points(xy[, 1] + center[1], xy[, 2] + center[2], cex = cex, col = col, pch = pch)
-}
-polarl <- function (t, r, col = 1, lwd = 1, center = c(0,0)) {
-  n <- length(t)
-  z <- cbind(t, r)
-  xy <- pol2cart(z)
-  if (n == 1) 
-    dim(xy) <- c(1, 2)
-  hy <- hypot(xy[, 1], xy[, 2])
-  lines(xy[, 1] + center[1], xy[, 2] + center[2], lwd = lwd, col = col)
-}
-arc <- function(t1,t2,r1,r2,res=50,lwd = 1,col=1, mindist = T, self_adjust = 2 * pi / 45, random_selfing = T, clockwise_selfing = T, pointy_selfing = F,
-                center = c(0,0)){
-  if(mindist){
-    if(abs(t1-t2) > pi){
-      if(t1 > t2){
-        t1 <- t1-2*pi
-      } else {
-        t2 <- t2-2*pi
-      }
-    }
-  }
-  if(abs(t1-t2) < 1E-6){
-    
-    if(random_selfing){
-      lor <- sample(c(-1,1), 1)
-    } else {
-      lor <- ifelse(clockwise_selfing, -1, 1)
-    }
-    
-    if(pointy_selfing){
-      ts <- c(seq(t1, t1 + lor * self_adjust, length.out = res/2), seq(t1 + lor * self_adjust, t1, length.out = res/2))
-      rs <- seq(r1, r2, length.out = res)
-    } else {
-      center <- center + pol2cart(cbind(t2, mean(c(r1, r2))))
-      if(random_selfing){
-        ts <- seq(t1, t1 + sample(c(-pi, pi), 1), length.out = res)
-      } else {
-        ts <- seq(t1, t1 + ifelse(clockwise_selfing, -pi, pi), length.out = res)
-      }
-      rs <- seq(max(c(r1,r2)) - mean(c(r1,r2)), mean(c(r1,r2)) - min(c(r1,r2)), length.out = res)
-    }
-    
-  } else {
-    ts <- seq(t1, t2, length.out = res)
-    rs <- seq(r1, r2, length.out = res)
-  }
-  polarl(ts, rs, lwd = lwd,col=col, center = center)
-}
-line <- function(t,r1,r2,lwd = 1,col=1, center = c(0,0)){
-  polarl(rep(t, 2), c(r1,r2), lwd = lwd,col=col, center = center)
-}
-logit <- function(p) log(p / (1-p))
-invlogit <- function(x) exp(x)/(1+exp(x))
-squish_middle_p <- function(p,f) invlogit(logit(p)*f)
-unsquish_middle_p <- function(p,f) invlogit(logit(p)/f)
-# squish_middle_x <- function(x,f) log(abs(x)+1)/log(f)*sign(x)
-# unsquish_middle_x <- function(x,f) (f^(abs(x))-1)*sign(x)
-squish_middle_x <- function(x,f) asinh(x*f)
-unsquish_middle_x <- function(x,f) sinh(x)/f
-redistribute <- function(x, incr){
-  new_x <- seq(from = min(x), length.out = length(x), by = incr)[rank(x)]
-  new_x - max(new_x) + max(x)
-}
-
+#### define functions ####
+source(file = "~/scripts/montgomery_lab/deg-trait_functions.R")
 
 #general graphical parameters
 motrpac_gtex_map = c('t30-blood-rna'='Whole Blood',
@@ -295,7 +81,8 @@ trait_categories <- read.csv("~/data/smontgom/gwas_metadata.csv", header = T)
 traitwise_partitions <- trait_categories[,c("Tag", "Category")]
 traitname_map <- trait_categories[,c("Tag", "new_Phenotype")]
 log_files$trait_category <- traitwise_partitions$Category[match(log_files$gwas, traitwise_partitions$Tag)]
-log_files <- log_files[log_files$trait_category %in% c("Cardiometabolic", "Aging", "Anthropometric", "Immune"),]
+salient.categories <- c("Cardiometabolic", "Aging", "Anthropometric", "Immune", "Psychiatric-neurologic")
+log_files <- log_files[log_files$trait_category %in% salient.categories,]
 
 total_h2_sigma_thresh <- 7
 traits_with_satisfactory_heritaility <- unique(log_files$gwas[log_files$h2 / log_files$h2se > total_h2_sigma_thresh])
@@ -364,12 +151,15 @@ sum(gcor_mat_sig, na.rm = T) - nrow(gcor_mat_sig)
 
 #get a few last graphical parameters
 unique_trait_categories <- unique(traitwise_partitions$Category)
-cols$category <- cols$Tissue[1:length(unique_trait_categories)+1]
-names(cols$category) <- unique_trait_categories
+category_colors <- RColorBrewer::brewer.pal(length(unique_trait_categories), "Dark2")
+names(category_colors) <- sort(salient.categories)
+cols$category <- category_colors
+# cols$category <- cols$Tissue[1:length(unique_trait_categories)+1]
+# names(cols$category) <- unique_trait_categories
 
 #### actually plot genetic correlations ####
 
-grDevices::cairo_pdf(filename = paste0("~/Documents/motrpac_companion/figures/figure1_high-level-overview.pdf"), 
+grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/figure1_high-level-overview.pdf"), 
                      width = 1300 / 72, height = 600 / 72, family="Arial Unicode MS")
 par(mar = c(6,5,3,8), mfrow = c(1,2), xpd = NA)
 # par(mar = c(6,5,3,4), xpd = NA)
@@ -417,20 +207,21 @@ for(rowi in 1:length(traits)){
 }
 
 xl = -2.5; xr = -0.5; yb = length(traitnames) / 3; yt = length(traitnames) / 1.5
+ydisp <- -3
 rect(xleft = xl, xright = xr, col = heatcols, border = NA,
-     yb = seq(yb, yt, length.out = length(heatcols)+1)[-(length(heatcols)+1)], yt= seq(yb, yt, length.out = length(heatcols)+1)[-1])
-rect(xleft = xl, xright = xr, ybottom = yb, ytop = yt)
-text(labels = -5:5/5, x = xl, pos = 2, y = seq(yb, yt, length.out = 11), cex = 1)
-text(x = mean(c(xl, xr)), y = yt - 0.25, labels = latex2exp::TeX("r_g"), pos = 3, cex = 2, font = 2)
+     yb = seq(yb, yt, length.out = length(heatcols)+1)[-(length(heatcols)+1)] + ydisp, yt= seq(yb, yt, length.out = length(heatcols)+1)[-1] + ydisp)
+rect(xleft = xl, xright = xr, ybottom = yb + ydisp, ytop = yt + ydisp)
+text(labels = -5:5/5, x = xl, pos = 2, y = seq(yb, yt, length.out = 11) + ydisp, cex = 1)
+text(x = mean(c(xl, xr)), y = yt + ydisp - 0.25, labels = latex2exp::TeX("$r_g$"), pos = 3, cex = 2, font = 2)
 text("Genetic Correlation Matrix", x = length(traits) / 2 + 0.5, y = length(traits) + 0.5, pos = 3, cex = 2.5, font = 2)
 
-points(rep((xl+xr)/2 + 0.5, length(cols$category)), 1:length(cols$category)*1.05, pch = 15, col = cols$category, cex = 1.75)
-text(rep((xl+xr)/2 + 0.5, length(cols$category)), 1:length(cols$category)*1.05, pos = 2, col = 1, 
-     labels = sapply(sapply(names(cols$category), function(x) strsplit(x, " ")[[1]][1]), function(y) strsplit(y, "-")[[1]][1]), cex = 0.75)
+points(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.05, pch = 15, col = cols$category[salient.categories], cex = 1.75)
+text(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.05, pos = 2, col = 1, 
+     labels = gsub("-.*", "", salient.categories), cex = 0.75)
 
-text(labels = latex2exp::TeX(paste0("• mark p-val < 10^{", round(log10(0.025  / choose(dim(gcor_mat)[1], 2)), 2), "}")), 
-     x = -0.5, y = yt + nrow(gcor_mat)/5, cex = 0.75, srt = 90)
-text(labels = "bonferroni", x = -1.5, y = yt + nrow(gcor_mat)/5, cex = 0.75, srt = 90, font = 3, family = "Arial")
+text(labels = latex2exp::TeX(paste0("• mark p-val < $10^{", round(log10(0.025  / choose(dim(gcor_mat)[1], 2)), 2), "}$")), 
+     x = -0.5, y = yt + ydisp + nrow(gcor_mat)/5, cex = 0.75, srt = 90)
+text(labels = "bonferroni", x = -1.5, y = yt + ydisp + nrow(gcor_mat)/5, cex = 0.75, srt = 90, font = 3, family = "Arial")
 
 fig_label(text = "a)", region = "plot", cex = 3, shrinkX = -20, shrinkY = 1.065)
 

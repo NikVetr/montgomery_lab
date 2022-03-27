@@ -97,118 +97,129 @@ library(fitdistrplus)
 
 #### estimate variances ####
 tissues <- names(motrpac_gtex_map)
-sds_expression <- list()
-invgamma_estimates <- list()
-n_peer_factors <- data.frame(n_factors = c(15,30,45,60), N = c(0,150,250,350))
 
-for(tissue in tissues){
-  print(tissue)
-  tissue_filename_keyword <- gsub(" ", "_", gsub(" - ", "_", motrpac_gtex_map[tissue]))
+run_sds_estimation <- F
+if(run_sds_estimation){
+  sds_expression <- list()
+  invgamma_estimates <- list()
+  n_peer_factors <- data.frame(n_factors = c(15,30,45,60), N = c(0,150,250,350))
   
-  #read in new and old expression files
-  d <- fread(file = paste0("~/repos/gtex-pipeline/log2-normalized-expression/log2-normalized-expression_",tissue,".expression.bed.gz"))
-  d_orig_genes <- gsub('\\..*','',fread(file = paste0("~/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_expression_matrices/",
-                                                      tissue_filename_keyword,".v8.normalized_expression.bed.gz"))$gene_id)
-  d$gene_id <- gsub('\\..*','',d$gene_id)
-  d <- d[d$gene_id %in% d_orig_genes,]
-  
-  #get useful informations
-  expr_cols <- grep("GTEX", colnames(d))
-  n_indiv <- length(expr_cols)
-  n_peer_factors_to_use <- n_peer_factors$n_factors[sum(n_peer_factors$N <= n_indiv)]
-  
-  #read in covariates and subset to the correct # of peer factors
-  covariates <- as.data.frame(fread(file = paste0("~/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates/", tissue_filename_keyword,".v8.covariates.txt")))
-  covariates_to_include <- match(setdiff(covariates$ID, covariates$ID[grep("Inferr", covariates$ID)][-(1:n_peer_factors_to_use)]), covariates$ID)
-  covariates <- covariates[covariates_to_include,]
-  
-  #compute residuals of genes from covariates file
-  d_resid <- do.call(rbind, mclapply(1:nrow(d), function(ri){
-    # if(ri%%1000==0){system(sprintf('echo "%s"', paste0(ri, " ", collapse="")))}
-    lm(as.numeric(d[ri,..expr_cols]) ~ t(as.matrix(covariates[,-1])))$resid
-  }, mc.cores = 12))
-  colnames(d_resid) <- colnames(d)[expr_cols]
-  
-  # ec <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_expected_count.gct.gz"))
-  # ec$gene_id <- gsub('\\..*','',ec$gene_id)
-  # 
-  # tpm <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_tpm.gct.gz"))
-  # tpm$gene_id <- gsub('\\..*','',tpm$gene_id)
-  # 
-  # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(ec)))))
-  # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(tpm)))))
-  # 
-  # plot(as.numeric(d[1,-c(1:4)]), log2(as.numeric(ec[match(d$gene_id[1], ec$gene_id),-1])+1))
-  # plot(as.numeric(d[3,-c(1:4)]), log2(as.numeric(tpm[match(d$gene_id[3], tpm$gene_id),-1])+1))
-  # plot(as.numeric(tpm[1,-1]), as.numeric(ec[1,-1]))
-  
-  #get sex information
-  #in GTEx, 1=Male	2=Female, https://storage.googleapis.com/gtex_analysis_v7/annotations/GTEx_Analysis_v7_Annotations_SubjectPhenotypesDD.xlsx
-  gtex_sex <- covariates[covariates$ID == "sex",] 
-  males <- colnames(gtex_sex)[gtex_sex == 1]
-  females <- colnames(gtex_sex)[gtex_sex == 2]
-  
-  # males <- as.matrix(d[,..males]) - apply(as.matrix(d[,..males]), 1, mean)
-  # females <- as.matrix(d[,..females]) - apply(as.matrix(d[,..females]), 1, mean)
-  # mean_centered <- cbind(males, females)
-  # plot(setNames(apply(females, 1, sd), d$gene_id), setNames(apply(mean_centered, 1, sd), d$gene_id))
-  
-  #compute sample variance and estimate invgamma dist hyperparameters
-  sample_pooled_vars <- apply(d_resid, 1, var)
-  sample_pooled_vars <- sample_pooled_vars[sample_pooled_vars != 0]
-  invgamma_estimate <- fitdist(sample_pooled_vars, "invgamma", method = "mge")$estimate
-  
-  print(invgamma_estimate)
-  hist(sample_pooled_vars, probability = T, breaks = 100)
-  lines(0:1000/100, dinvgamma(0:1000/100, shape = invgamma_estimate[1], scale = invgamma_estimate[2]))
-  
-  #estimate posterior mean SDs
-  posterior_mean_sds <- as.data.frame(do.call(rbind, lapply(1:nrow(d_resid), function(i){
+  for(tissue in tissues){
+    print(tissue)
+    tissue_filename_keyword <- gsub(" ", "_", gsub(" - ", "_", motrpac_gtex_map[tissue]))
     
-    posterior_params <- c(alpha = invgamma_estimate[1] + ncol(d_resid),
-                          beta = invgamma_estimate[2] + sum((d_resid[i,])^2) / 2)
-    est_var <- as.numeric(posterior_params["beta.scale"] / (posterior_params["alpha.shape"]-1))
+    #read in new and old expression files
+    d <- fread(file = paste0("/Volumes/SSD500GB/gtex-pipeline/log2-normalized-expression/log2-normalized-expression_",tissue,".expression.bed.gz"))
+    d_orig_genes <- gsub('\\..*','',fread(file = paste0("/Volumes/SSD500GB/gtex-pipeline/GTEx_Analysis_v8_eQTL_expression_matrices/",
+                                                        tissue_filename_keyword,".v8.normalized_expression.bed.gz"))$gene_id)
+    d$gene_id <- gsub('\\..*','',d$gene_id)
+    d <- d[d$gene_id %in% d_orig_genes,]
     
-    posterior_params_m <- c(alpha = invgamma_estimate[1] + length(males),
-                            beta = invgamma_estimate[2] + sum((d_resid[i,males])^2) / 2)
-    est_var_m <- as.numeric(posterior_params_m["beta.scale"] / (posterior_params_m["alpha.shape"]-1))
+    #get useful informations
+    expr_cols <- grep("GTEX", colnames(d))
+    n_indiv <- length(expr_cols)
+    n_peer_factors_to_use <- n_peer_factors$n_factors[sum(n_peer_factors$N <= n_indiv)]
     
-    posterior_params_f <- c(alpha = invgamma_estimate[1] + length(females),
-                            beta = invgamma_estimate[2] + sum((d_resid[i,females])^2) / 2)
-    est_var_f <- as.numeric(posterior_params_f["beta.scale"] / (posterior_params_f["alpha.shape"]-1))
+    #read in covariates and subset to the correct # of peer factors
+    covariates <- as.data.frame(fread(file = paste0("/Volumes/SSD500GB/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates/", tissue_filename_keyword,".v8.covariates.txt")))
+    covariates_to_include <- match(setdiff(covariates$ID, covariates$ID[grep("Inferr", covariates$ID)][-(1:n_peer_factors_to_use)]), covariates$ID)
+    covariates <- covariates[covariates_to_include,]
     
-    return(c(est_sd = sqrt(est_var), est_sd_m = sqrt(est_var_m), est_sd_f = sqrt(est_var_f)))
-  })))
-  rownames(posterior_mean_sds) <- d$gene_id
-  posterior_mean_sds$tissue <- tissue
+    #compute residuals of genes from covariates file
+    d_resid <- do.call(rbind, mclapply(1:nrow(d), function(ri){
+      # if(ri%%1000==0){system(sprintf('echo "%s"', paste0(ri, " ", collapse="")))}
+      lm(as.numeric(d[ri,..expr_cols]) ~ t(as.matrix(covariates[,-1])))$resid
+    }, mc.cores = 12))
+    colnames(d_resid) <- colnames(d)[expr_cols]
+    
+    # ec <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_expected_count.gct.gz"))
+    # ec$gene_id <- gsub('\\..*','',ec$gene_id)
+    # 
+    # tpm <- fread(file = paste0("~/repos/gtex-pipeline/expression_data/GTEx_Analysis_v8_",tissue,"_tpm.gct.gz"))
+    # tpm$gene_id <- gsub('\\..*','',tpm$gene_id)
+    # 
+    # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(ec)))))
+    # diff(as.integer(sapply(colnames(d), function(name) grep(name, colnames(tpm)))))
+    # 
+    # plot(as.numeric(d[1,-c(1:4)]), log2(as.numeric(ec[match(d$gene_id[1], ec$gene_id),-1])+1))
+    # plot(as.numeric(d[3,-c(1:4)]), log2(as.numeric(tpm[match(d$gene_id[3], tpm$gene_id),-1])+1))
+    # plot(as.numeric(tpm[1,-1]), as.numeric(ec[1,-1]))
+    
+    #get sex information
+    #in GTEx, 1=Male	2=Female, https://storage.googleapis.com/gtex_analysis_v7/annotations/GTEx_Analysis_v7_Annotations_SubjectPhenotypesDD.xlsx
+    gtex_sex <- covariates[covariates$ID == "sex",] 
+    males <- colnames(gtex_sex)[gtex_sex == 1]
+    females <- colnames(gtex_sex)[gtex_sex == 2]
+    
+    # males <- as.matrix(d[,..males]) - apply(as.matrix(d[,..males]), 1, mean)
+    # females <- as.matrix(d[,..females]) - apply(as.matrix(d[,..females]), 1, mean)
+    # mean_centered <- cbind(males, females)
+    # plot(setNames(apply(females, 1, sd), d$gene_id), setNames(apply(mean_centered, 1, sd), d$gene_id))
+    
+    #compute sample variance and estimate invgamma dist hyperparameters
+    sample_pooled_vars <- apply(d_resid, 1, var)
+    sample_pooled_vars <- sample_pooled_vars[sample_pooled_vars != 0]
+    invgamma_estimate <- fitdist(sample_pooled_vars, "invgamma", method = "mge")$estimate
+    
+    print(invgamma_estimate)
+    hist(sample_pooled_vars, probability = T, breaks = 100)
+    lines(0:1000/100, dinvgamma(0:1000/100, shape = invgamma_estimate[1], scale = invgamma_estimate[2]))
+    
+    #estimate posterior mean SDs
+    posterior_mean_sds <- as.data.frame(do.call(rbind, lapply(1:nrow(d_resid), function(i){
+      
+      posterior_params <- c(alpha = invgamma_estimate[1] + ncol(d_resid),
+                            beta = invgamma_estimate[2] + sum((d_resid[i,])^2) / 2)
+      est_var <- as.numeric(posterior_params["beta.scale"] / (posterior_params["alpha.shape"]-1))
+      
+      posterior_params_m <- c(alpha = invgamma_estimate[1] + length(males),
+                              beta = invgamma_estimate[2] + sum((d_resid[i,males])^2) / 2)
+      est_var_m <- as.numeric(posterior_params_m["beta.scale"] / (posterior_params_m["alpha.shape"]-1))
+      
+      posterior_params_f <- c(alpha = invgamma_estimate[1] + length(females),
+                              beta = invgamma_estimate[2] + sum((d_resid[i,females])^2) / 2)
+      est_var_f <- as.numeric(posterior_params_f["beta.scale"] / (posterior_params_f["alpha.shape"]-1))
+      
+      return(c(est_sd = sqrt(est_var), est_sd_m = sqrt(est_var_m), est_sd_f = sqrt(est_var_f)))
+    })))
+    rownames(posterior_mean_sds) <- d$gene_id
+    posterior_mean_sds$tissue <- tissue
+    
+    # plot(apply(d_resid, 1, sd), posterior_mean_sds$est_sd); abline(0,1,col=2,lwd=2)
+    # plot(posterior_mean_sds$est_sd_m, posterior_mean_sds$est_sd_f); abline(0,1,col=2,lwd=2)
+    
+    
+    # data <- list(
+    #   n_gene = length(d$gene_id),
+    #   n_male = length(males),
+    #   n_female = length(females),
+    #   male = c(as.matrix(d[,..males]) - apply(as.matrix(d[,..males]), 1, mean)),
+    #   female = c(as.matrix(d[,..females] - apply(as.matrix(d[,..females]), 1, mean))),
+    #   male_gene_index = rep(1:length(d$gene_id), length(males)),
+    #   female_gene_index = rep(1:length(d$gene_id), length(females))
+    # )
+    #   
+    # out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3,
+    #                   data = data,
+    #                   parallel_chains = 4,
+    #                   adapt_delta = 0.85, refresh = 10, init = 0.1, max_treedepth = 15, thin = 5)
+    # samps <- data.frame(as_draws_df(out$draws()))
+    # hist(samps$gene_logsd.3., breaks =100)
+    
+    # plot(setNames(apply(d[,..males], 1, sd), d$gene_id), setNames(apply(d[,..females], 1, sd), d$gene_id))
+    
+    #write to object
+    invgamma_estimates[[tissue]] <- invgamma_estimate
+    sds_expression[[tissue]] <- posterior_mean_sds
+  }
   
-  # plot(apply(d_resid, 1, sd), posterior_mean_sds$est_sd); abline(0,1,col=2,lwd=2)
-  # plot(posterior_mean_sds$est_sd_m, posterior_mean_sds$est_sd_f); abline(0,1,col=2,lwd=2)
-  
-  
-  # data <- list(
-  #   n_gene = length(d$gene_id),
-  #   n_male = length(males),
-  #   n_female = length(females),
-  #   male = c(as.matrix(d[,..males]) - apply(as.matrix(d[,..males]), 1, mean)),
-  #   female = c(as.matrix(d[,..females] - apply(as.matrix(d[,..females]), 1, mean))),
-  #   male_gene_index = rep(1:length(d$gene_id), length(males)),
-  #   female_gene_index = rep(1:length(d$gene_id), length(females))
-  # )
-  #   
-  # out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3,
-  #                   data = data,
-  #                   parallel_chains = 4,
-  #                   adapt_delta = 0.85, refresh = 10, init = 0.1, max_treedepth = 15, thin = 5)
-  # samps <- data.frame(as_draws_df(out$draws()))
-  # hist(samps$gene_logsd.3., breaks =100)
-  
-  # plot(setNames(apply(d[,..males], 1, sd), d$gene_id), setNames(apply(d[,..females], 1, sd), d$gene_id))
-  
-  #write to object
-  invgamma_estimates[[tissue]] <- invgamma_estimate
-  sds_expression[[tissue]] <- posterior_mean_sds
+  save(x = sds_expression, file = "~/data/smontgom/GREx_sds_expression")
+  save(x = invgamma_estimate, file = "~/data/smontgom/GREx_invgamma_estimate")
+} else {
+  load("~/data/smontgom/GREx_sds_expression")
+  load("~/data/smontgom/GREx_invgamma_estimate")
 }
+
 
 
 # sapply(sds_expression, function(x) length(x))
@@ -307,20 +318,28 @@ if(do_EDA){
          xlab = "wheeler h2", ylab = "my gcta h2", pch = 19, col = adjustcolor(1, 0.1))
   }
 }
-#find where GCTA reliably estimated h2
-load(paste0(gcta_directory, "gcta_output_GTEx_allTissues.RData")) #gcta_output
-gcta_output_df <- do.call(rbind, gcta_output)
-gcta_output_df$tissue <- as.factor(gcta_output_df$tissue)
-gcta_output_df$p <- gcta_output_df$p*2
-ihw_results_gcta <- IHW::ihw(p ~ tissue, data = gcta_output_df, alpha = 0.1)
-gcta_alpha <- 0.1
-sum(ihw_results_gcta@df$adj_pvalue < gcta_alpha)
-# hist(ihw_results_gcta@df$adj_pvalue, breaks = 20)
-gcta_output_df$adj_p <- ihw_results_gcta@df$adj_pvalue
-gcta_output <- lapply(setNames(tissues, tissues), function(tiss) gcta_output_df[gcta_output_df$tissue == tiss & gcta_output_df$adj_p < gcta_alpha,])
-save(gcta_output, file = paste0(gcta_directory, "gcta_output_GTEx_allTissues_list_IHW.RData"))
 
-#compute relative exercise effect z-scores
+#find where GCTA reliably estimated h2
+do_ihw <- F
+if(do_ihw){
+  load(paste0(gcta_directory, "gcta_output_GTEx_allTissues.RData")) #gcta_output
+  gcta_output_df <- do.call(rbind, gcta_output)
+  gcta_output_df$tissue <- as.factor(gcta_output_df$tissue)
+  gcta_output_df$p <- gcta_output_df$p*2
+  ihw_results_gcta <- IHW::ihw(p ~ tissue, data = gcta_output_df, alpha = 0.1)
+  gcta_alpha <- 0.1
+  sum(ihw_results_gcta@df$adj_pvalue < gcta_alpha)
+  # hist(ihw_results_gcta@df$adj_pvalue, breaks = 20)
+  gcta_output_df$adj_p <- ihw_results_gcta@df$adj_pvalue
+  gcta_output <- lapply(setNames(tissues, tissues), function(tiss) gcta_output_df[gcta_output_df$tissue == tiss & gcta_output_df$adj_p < gcta_alpha,])
+  save(gcta_output, file = paste0(gcta_directory, "gcta_output_GTEx_allTissues_list_IHW.RData"))
+} else {
+  load(paste0(gcta_directory, "gcta_output_GTEx_allTissues_list_IHW.RData"))
+}
+
+
+
+#### compute relative exercise effect z-scores ####
 load(paste0(gcta_directory, "gcta_output_GTEx_allTissues_list_IHW.RData"))
 for(tissue in tissues){
   print(tissue)
@@ -351,6 +370,7 @@ for(tissue in tissues){
   #      sqrt(gcta_output[[tissue]]$h2[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)] + 
   #             2 * gcta_output[[tissue]]$SE[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)]))
 }
+save(deg_eqtl_list, file = "~/data/smontgom/relative_effect_sizes_deg_eqtl_list.RData")
 
 #remove unexpressed genes
 # where either "reference_average_intensity" or "comparison_timewise_intensity" in the timewise-dea tables is 0

@@ -105,16 +105,58 @@ sign_match <- lapply(setNames(c("male", "female"), c("male", "female")), functio
   sexmatch
 })
 
+load("~/data/smontgom/node_metadata_list.RData")
 # sign_match <- lapply(setNames(c("male", "female"), c("male", "female")), 
 #                               function(sex) round(sign_match[[sex]]*100, 1))
-
 sign_match
+
 
 #also read in the raw data?
 muscle <- read.csv(file = "~/data/smontgom/longterm_muscle.csv")
 muscle <- muscle[muscle$Group == "base_model",]
 blood <- read.csv(file = "~/data/smontgom/longterm_blood.csv")
 blood <- blood[blood$Group == "base_model",]
+
+load("~/data/smontgom/genes_tested_in_transcriptome_DEA.RData")
+gencode_gene_map <- fread("~/data/smontgom/gencode.v39.RGD.20201001.human.rat.gene.ids.txt")
+gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID <- gsub(gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID, pattern = "\\..*", replacement = "")
+gene_map <- gencode_gene_map
+all_orthologs_tested <- gene_map$HUMAN_ORTHOLOG_SYMBOL[match(genes_tested_in_transcriptome_DEA, gene_map$RAT_ENSEMBL_ID)]
+all_orthologs_tested <- all_orthologs_tested[!is.na(all_orthologs_tested)]
+
+node_metadata_list[["8w"]]$human_gene_symbol %in% all_orthologs_tested
+muscle <- muscle[muscle$Entrez %in% all_orthologs_tested,]
+blood <- blood[blood$Entrez %in% all_orthologs_tested,]
+
+tissues <- c("t55-gastrocnemius", "t56-vastus-lateralis", "t30-blood-rna")
+lapply(tissues[1:2], function(tiss){
+  
+})
+
+hits <- sapply(paste0(2^(0:3), "w"), function(time){
+  c(sum(muscle$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[1]]]),
+    sum(muscle$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[2]]]),
+    sum(blood$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[3]]]))
+})
+rownames(hits) <- tissues
+
+misses <- sapply(paste0(2^(0:3), "w"), function(time){
+  c(sum(!(muscle$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[1]]])),
+    sum(!(muscle$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[2]]])),
+    sum(!(blood$Entrez %in% node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[3]]])))
+})
+rownames(misses) <- tissues
+
+len_rmna <- function(x) length(x[!is.na(x)])
+n_genes_in_nodes <- sapply(paste0(2^(0:3), "w"), function(time){
+  c(len_rmna(node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[1]]]),
+    len_rmna(node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[2]]]),
+    len_rmna(node_metadata_list[[time]]$human_gene_symbol[node_metadata_list[[time]]$tissue == tissue_abbr[tissues[3]]]))
+})
+(hits / n_genes_in_nodes) / (misses / (length(all_orthologs_tested) - n_genes_in_nodes))
+
+all_orthologs_tested
+all_orthologs_tested
 
 n_genes_per_tissue <- lapply(setNames(c("male", "female"), c("male", "female")), function(sex){
   sapply(names(merged_results), function(tissue){
@@ -179,7 +221,7 @@ lines2 <- function(x, y, lwds, col = 1){
 
 #### just the plotting ####
 
-cairo_pdf("~/Documents/Documents - nikolai/pass1b_fig8_rat-man_sign_replication.pdf", width = 800 / 72, height = 500 / 72, family="Arial Unicode MS")
+cairo_pdf("~/Documents/Documents - nikolai/motrpac_companion/figures/pass1b_fig8_rat-man_sign_replication.pdf", width = 800 / 72, height = 500 / 72, family="Arial Unicode MS")
 par(mfrow = c(2,3), mar = c(4,4,4,2))
 for(sex in c("male", "female")){
   for(tissue in names(merged_results)){

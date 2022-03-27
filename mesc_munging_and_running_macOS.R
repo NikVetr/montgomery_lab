@@ -7,12 +7,12 @@ library(data.table)
 # paste0("python2 ./run_mesc.py ",
 #        "--compute-expscore-indiv ",
 #        "--plink-path /Users/nikgvetr/repos/plink/plink ",
-#        "--expression-matrix /Users/nikgvetr/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_expression_matrices/Muscle_Skeletal.v8.normalized_expression.bed.gz  ",
+#        "--expression-matrix /Volumes/SSD500GB/gtex-pipeline/GTEx_Analysis_v8_eQTL_expression_matrices/Muscle_Skeletal.v8.normalized_expression.bed.gz  ",
 #        "--columns 4,1,2,5 ",
-#        "--exp-bfile /Users/nikgvetr/repos/gtex-pipeline/expression_genotypes/GTEx_v8 ",
+#        "--exp-bfile /Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8 ",
 #        "--geno-bfile /Users/nikgvetr/repos/ldsc/1000G_EUR_Phase3_plink/1000G.EUR.QC.1 ",
 #        "--chr 1 ",
-#        "--covariates /Users/nikgvetr/repos/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates/Muscle_Skeletal.v8.covariates.transpose.txt ",
+#        "--covariates /Volumes/SSD500GB/gtex-pipeline/GTEx_Analysis_v8_eQTL_covariates/Muscle_Skeletal.v8.covariates.transpose.txt ",
 #        "--out testrun"
 # )
 # 
@@ -36,8 +36,47 @@ library(data.table)
 # fwrite(covf, "~/repos/mesc/GTEx_covariates/Muscle_Skeletal.v8.covariates.txt", sep = "\t", row.names = F, col.names = T)
 
 
-#get genesets for all tissues
-load("~/data/smontgom/node_metadata_list.RData") #from "~/scripts/montgomery_lab/motrpac-DEG_barbeira-twas_intersection.R"
+#### get genesets for all tissues ####
+
+#first get the node information
+
+# load("~/data/smontgom/node_metadata_list.RData") #from "~/scripts/montgomery_lab/motrpac-DEG_barbeira-twas_intersection.R"
+if(file.exists("~/data/smontgom/node_metadata_list_mesc.RData")){
+  load("~/data/smontgom/node_metadata_list_mesc.RData")
+} else {
+  gencode_gene_map <- fread("~/data/smontgom/gencode.v39.RGD.20201001.human.rat.gene.ids.txt")
+  gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID <- gsub(gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID, pattern = "\\..*", replacement = "")
+  gene_map <- gencode_gene_map
+  load("~/data/smontgom/graphical_analysis_results_20211220.RData")
+  # nodes_to_look_at_list <- list(c("1w_F1_M1", "1w_F-1_M-1"),
+  #                               c("2w_F1_M1", "2w_F-1_M-1"),
+  #                               c("4w_F1_M1", "4w_F-1_M-1"),
+  #                               c("8w_F1_M1", "8w_F-1_M-1"))
+  
+  node_shorthand <- expand.grid(-1:1, -1:1)
+  node_shorthand <- node_shorthand[!(node_shorthand[,1] == 0 & node_shorthand[,2] == 0),]
+  nodes_to_look_at_list <- lapply(paste0(2^(0:3), "w"), function(tpt) paste0(tpt, "_F", node_shorthand[,1], "_M", node_shorthand[,2]))
+  
+  node_metadata_list <- lapply(setNames(nodes_to_look_at_list, paste0(2^(0:3), "w")), function(nodes_to_look_at){
+    node_metadata <- lapply(setNames(nodes_to_look_at, nodes_to_look_at), function(node_to_look_at)
+      cbind(do.call(rbind, strsplit(node_sets[node_to_look_at][[node_to_look_at]][grep(
+        node_sets[node_to_look_at][[node_to_look_at]], pattern = "TRNSCRPT")], ";")), node_to_look_at))
+    node_metadata <- as.data.table(do.call(rbind, node_metadata))
+    colnames(node_metadata) <- c("ome","tissue","ensembl_gene", "node")
+    
+    
+    node_metadata$rat_gene_symbol <- gene_map$RAT_SYMBOL[match(node_metadata$ensembl_gene, gene_map$RAT_ENSEMBL_ID)]
+    node_metadata$human_gene_symbol <- gene_map$HUMAN_ORTHOLOG_SYMBOL[match(node_metadata$ensembl_gene, gene_map$RAT_ENSEMBL_ID)]
+    node_metadata$human_ensembl_gene <- gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID[match(node_metadata$ensembl_gene, gene_map$RAT_ENSEMBL_ID)]
+    node_metadata$human_ensembl_gene <- gsub(node_metadata$human_ensembl_gene, pattern = "\\..*", replacement = "")
+    node_metadata$cluster <- paste0(node_metadata$tissue, "-", node_metadata$node)
+    node_metadata$cluster <- paste0(node_metadata$tissue, "-", "sex_homogeneous_changing")
+    node_metadata
+  })
+  save(node_metadata_list, file = "~/data/smontgom/node_metadata_list_mesc.RData")
+}
+
+
 motrpac_gtex_map = c('t30-blood-rna'='Whole_Blood',
                      't52-hippocampus'='Brain_Hippocampus',
                      't53-cortex'='Brain_Cortex',
@@ -152,11 +191,14 @@ mesc_output_categories <- do.call(rbind, lapply(tissues_to_analyze, function(tis
   print(tiss)
   tissue_dir <- paste0("~/repos/mesc/output/Enrichment/", tiss, "/")
   mesc_out <- do.call(rbind, lapply(gwas_files, function(gwas){
+    file_to_read <- paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".categories.h2med")
+    if(!file.exists(file_to_read)){return(NULL)}
     enrich <- fread(paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".categories.h2med"))
     enrich$trait <- gwas
     enrich <- enrich[!grepl("h2cis_bin", enrich$Gene_category),]
     enrich
   }))
+  if(is.null(mesc_out)){return(NULL)}
   mesc_out$tissue <- tiss
   mesc_out
 }))
@@ -165,10 +207,13 @@ mesc_output_basic <- do.call(rbind, lapply(tissues_to_analyze, function(tiss){
   print(tiss)
   tissue_dir <- paste0("~/repos/mesc/output/Enrichment/", tiss, "/")
   mesc_out <- do.call(rbind, lapply(gwas_files, function(gwas){
+    file_to_read <- paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".all.h2med")
+    if(!file.exists(file_to_read)){return(NULL)}
     enrich <- fread(paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".all.h2med"))
     enrich$trait <- gwas
     enrich
   }))
+  if(is.null(mesc_out)){return(NULL)}
   mesc_out$tissue <- tiss
   mesc_out
 }))
@@ -201,9 +246,9 @@ mesc_output_categories[apply(cbind(ihw_trait = mesc_output_categories$enrich_pva
 
 #### computing expressions cores from scratch ####
 
-# bim_file <- fread("/Users/nikgvetr/repos/gtex-pipeline/expression_genotypes/GTEx_v8_noChr.bim")
-# fwrite(bim_file, "/Users/nikgvetr/repos/gtex-pipeline/expression_genotypes/GTEx_v8_noChr_noRSID.bim", col.names = F)
-bim_file <- fread("/Users/nikgvetr/repos/gtex-pipeline/expression_genotypes/GTEx_v8_noChr_noRSID.bim")
+# bim_file <- fread("/Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8_noChr.bim")
+# fwrite(bim_file, "/Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8_noChr_noRSID.bim", col.names = F)
+bim_file <- fread("/Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8_noChr_noRSID.bim")
 bim_file_rsids <- do.call(rbind, lapply(unique(bim_file$V1), function(cri){
   print(cri)
   sub <- bim_file[bim_file$V1 == cri,]
@@ -223,7 +268,7 @@ bim_file_rsids <- do.call(rbind, lapply(unique(bim_file$V1), function(cri){
 bim_file_rsids$V2[is.na(bim_file_rsids$V2)] <- "NA"
 bim_file_rsids$V2[bim_file_rsids$V2 == "rs123456789"] <- "NA"
 bim_file_rsids[bim_file_rsids$V2 != "NA",]
-fwrite(bim_file_rsids, "/Users/nikgvetr/repos/gtex-pipeline/expression_genotypes/GTEx_v8_noChr.bim", col.names = F, sep = "\t")
+fwrite(bim_file_rsids, "/Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8_noChr.bim", col.names = F, sep = "\t")
 
 bim_file_1000G <- fread("/Users/nikgvetr/repos/ldsc/1000G_EUR_Phase3_plink/1000G.EUR.QC.1.bim")
 head(bim_file_1000G)
