@@ -161,9 +161,9 @@ if(run_sds_estimation){
     sample_pooled_vars <- sample_pooled_vars[sample_pooled_vars != 0]
     invgamma_estimate <- fitdist(sample_pooled_vars, "invgamma", method = "mge")$estimate
     
-    print(invgamma_estimate)
-    hist(sample_pooled_vars, probability = T, breaks = 100)
-    lines(0:1000/100, dinvgamma(0:1000/100, shape = invgamma_estimate[1], scale = invgamma_estimate[2]))
+    # print(invgamma_estimate)
+    # hist(sample_pooled_vars, probability = T, breaks = 100)
+    # lines(0:1000/100, dinvgamma(0:1000/100, shape = invgamma_estimate[1], scale = invgamma_estimate[2]))
     
     #estimate posterior mean SDs
     posterior_mean_sds <- as.data.frame(do.call(rbind, lapply(1:nrow(d_resid), function(i){
@@ -214,7 +214,7 @@ if(run_sds_estimation){
   }
   
   save(x = sds_expression, file = "~/data/smontgom/GREx_sds_expression")
-  save(x = invgamma_estimate, file = "~/data/smontgom/GREx_invgamma_estimate")
+  save(x = invgamma_estimates, file = "~/data/smontgom/GREx_invgamma_estimate")
 } else {
   load("~/data/smontgom/GREx_sds_expression")
   load("~/data/smontgom/GREx_invgamma_estimate")
@@ -491,7 +491,7 @@ layout(rbind(
 
 
 
-par(mar = c(4,3,2,3))
+par(mar = c(4,1.5,2,1.5))
 #logFCs
 xr <- c(-2,2)
 x_logfc <- seq(from = xr[1], to = xr[2], length.out = 256)
@@ -513,12 +513,12 @@ for(tissue in colnames(logfc_dens)){
 #surrounding text
 # text(x = -6, y = -6.5, labels = "(", cex = 16, xpd = NA, family = "Helvetica Narrow", srt = 0, col = 1)
 par(xpd = NA)
-arc(t1 = pi/2, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(-6.75, -6.5), adjx = 0.25, lwd = 3)
-arc(t1 = pi/2-1E-5, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(6, -6.5), adjx = 0.25, lwd = 3)
-text(x = 6.875, -3.5, labels = "1/2", cex = 2)
-segments(x0 = -6, x1 = 5.5, y0 = -2.5, y1 = -2.5, lwd = 5, xpd = NA)
-segments(x0 = 7.5, x1 = 8.5, y0 = -2.5, y1 = -2.5, lwd = 10, xpd = NA, col = 2)
-points(8.5, -2.5, pch = -9658, cex = 5, xpd = NA, col = 2)
+arc(t1 = pi/2, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(-5.25, -6.5), adjx = 0.25, lwd = 3)
+arc(t1 = pi/2-1E-5, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(4.75, -6.5), adjx = 0.25, lwd = 3)
+text(x = 5.5, -3.5, labels = "1/2", cex = 2)
+segments(x0 = -5.5, x1 = 5, y0 = -2.5, y1 = -2.5, lwd = 5, xpd = NA)
+segments(x0 = 6, x1 = 7, y0 = -2.5, y1 = -2.5, lwd = 10, xpd = NA, col = 2)
+points(7.25, -2.5, pch = -9658, cex = 5, xpd = NA, col = 2)
 par(xpd = T)
 
 #snp heritability

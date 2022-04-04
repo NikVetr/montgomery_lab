@@ -2550,6 +2550,9 @@ cairo_pdf(paste0("~/Documents/Documents - nikolai/pass1b_fig8_DEG-TWAS_logodds.p
           width = 1000 / 72, height = 950 / 72, family="Arial Unicode MS", pointsize = 25)
 
 category_shapes <- setNames(15:19, salient.categories)
+category_shapes <- setNames(15:19, c("Cardiometabolic", "Aging", "Anthropometric", 
+                                     "Immune", "Psychiatric-neurologic")
+)
 
 par(mar = c(5,4,3,4))
 #first plot
@@ -2641,11 +2644,30 @@ text(x = par("usr")[1] + diff(par("usr")[1:2]) / 1.45,
 dev.off()
 
 #### plot rowbias as a boxplot ####
+if(length(salient.categories) < 9){
+  category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
+  names(category_colors) <- sort(salient.categories)  
+} else {
+  category_colors <- RColorBrewer::brewer.pal(5, "Dark2")
+  names(category_colors) <- sort(c("Cardiometabolic", "Aging", "Anthropometric", 
+                                   "Immune", "Psychiatric-neurologic"))
+  cats_leftover <- setdiff(salient.categories, names(category_colors))
+  cols_leftover <- setdiff(RColorBrewer::brewer.pal(8, "Dark2"), category_colors)
+  n_cols_needed <- length(cats_leftover) - length(cols_leftover)
+  if(n_cols_needed > 0){
+    extra_cols <- c(cols_leftover, RColorBrewer::brewer.pal(n_cols_needed, "Set2"))
+  } else {
+    extra_cols <- cols_leftover
+  }
+  names(extra_cols) <- cats_leftover
+  category_colors <- c(category_colors, extra_cols)
+}
+cols$category <- category_colors
 
 
 grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/figure_intersect_enrichment_posterior_summary.pdf"), 
                      width = 1400 / 72, height = 800 / 72, family="Arial Unicode MS", pointsize = 20)
-layout(rbind(c(1,1,2), c(3,3,3)))
+layout(rbind(c(1,1,1,1,2,2,2), c(3,3,3,3,3,3,3)))
 
 overlaps_with_zero <- function(qi){qi[1,] < 0 & qi[2,] > 0}
 
@@ -2666,14 +2688,14 @@ for(i in 1:length(tissues)){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 4, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19, cex = 1.5)
 }
-text(tick + 0.2, par("usr")[3] - 0.1, tissues[tord], srt = 45, xpd = T, pos = 2)
+text(tick + 0.2, par("usr")[3] - 0.05, tissues[tord], srt = 45, xpd = T, pos = 2)
 
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 
 
 #### plot colcatbias as a boxplot ###
 
-par(mar = c(6,5.5,2,2))
+par(mar = c(7,5.5,2,2))
 tord <- order(apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps), 2, mean))
 qi_95 <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, quantile, probs = c(0.05, 0.95))[,tord]
 posterior_means <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, mean)[tord]
@@ -2690,15 +2712,12 @@ for(i in 1:length(trait_cats)){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 4, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19, cex = 1.5)
 }
-text(tick + 0.125, par("usr")[3] - 0.055, trait_cats[tord], srt = 45, xpd = T, pos = 2, xpd = NA)
+text(tick + 0.35, par("usr")[3] - 0.1, trait_cats[tord], srt = 45, xpd = T, pos = 2, xpd = NA)
 
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 
 
 #### plot colbias as a boxplot ###
-category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
-names(category_colors) <- sort(salient.categories)
-
 par(mar = c(12,5.5,2,2))
 trait_subset_bool <- traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] %in% c("Cardiometabolic")
 trait_subset_bool <- traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] %in% salient.categories
@@ -2709,7 +2728,7 @@ inside_cols <- rep("black", length(tord))
 inside_cols[overlaps_with_zero(qi_95)] <- "white"
 tmp <- vioplot::vioplot(x = as.matrix((subset_samps("col_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,trait_subset_bool])[,tord], T, 
                         col = category_colors[traitwise_partitions$Category[match(traits[trait_subset_bool], traitwise_partitions$Tag)]][tord], 
-                        outline=FALSE, xaxt = "n",
+                        outline=FALSE, xaxt = "n", xlim = c(4,sum(trait_subset_bool)-3),
                         names = tissues[tord], srt = 90, range = 0, xlab = "", 
                         lineCol = category_colors[traitwise_partitions$Category[match(traits[trait_subset_bool], traitwise_partitions$Tag)]][tord],
                         ylab = "meta-analyzed trait enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", 
@@ -2720,7 +2739,7 @@ for(i in 1:length(traits[trait_subset_bool])){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 2, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19)
 }
-text(tick + 0.55, par("usr")[3] - 0.125, cex = 0.9,
+text(tick + 0.55, par("usr")[3] - 0.125, cex = 0.7,
      trait_categories$new_Phenotype[match(traits[trait_subset_bool][tord], trait_categories$Tag)], srt = 45, xpd = T, pos = 2)
 
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
@@ -2752,7 +2771,7 @@ abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 #### now plot the intersect of DEGs & TWAS hits ####
 
 #counts or props?
-incl_significance <- F
+incl_significance <- T
 incl_cell_totals <- F
 trait_category_legend_below = T
 use_tissue_cols_for_cols <- T
@@ -2763,9 +2782,9 @@ prop_TWAS <- T
 order_by_counts <- F
 order_by_posterior_enrichment <- T
 group_by_tissue_type <- T
-use_range_for_maginal_labels <- T
+use_range_for_maginal_labels <- F
 
-subset_to_traits <- F
+subset_to_traits <- T
 if(subset_to_traits){
   trait_subset <- colnames(n_deg_sigtwas_intersect)[
     traitwise_partitions$Category[match(colnames(n_deg_sigtwas_intersect), traitwise_partitions$Tag)] %in% 
@@ -2830,12 +2849,32 @@ if(use_range_for_maginal_labels){
 
 
 
-category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
-names(category_colors) <- sort(salient.categories)
+if(length(salient.categories) < 9){
+  category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
+  names(category_colors) <- sort(salient.categories)  
+} else {
+  category_colors <- RColorBrewer::brewer.pal(5, "Dark2")
+  names(category_colors) <- sort(c("Cardiometabolic", "Aging", "Anthropometric", 
+                                   "Immune", "Psychiatric-neurologic"))
+  cats_leftover <- setdiff(salient.categories, names(category_colors))
+  cols_leftover <- setdiff(RColorBrewer::brewer.pal(8, "Dark2"), category_colors)
+  n_cols_needed <- length(cats_leftover) - length(cols_leftover)
+  if(n_cols_needed > 0){
+    extra_cols <- c(cols_leftover, RColorBrewer::brewer.pal(n_cols_needed, "Set2"))
+  } else {
+    extra_cols <- cols_leftover
+  }
+  names(extra_cols) <- cats_leftover
+  category_colors <- c(category_colors, extra_cols)
+}
+cols$category <- category_colors
 
 cairo_pdf(paste0("~/Documents/Documents - nikolai/pass1b_fig8_DEG-TWAS_Intersect", 
-                 ifelse(use_counts, "_counts", "_permille"), ifelse(subset_to_traits, "_subset-traits", "_all-traits"),".pdf"), 
-          width = 2100 / 72 * ncol(table_to_use) / 80, height = 500 / 72 + ifelse(group_by_tissue_type, disp_amount * 0.75, 0), family="Arial Unicode MS")
+                 ifelse(use_counts, "_counts", "_permille"), 
+                 ifelse(subset_to_traits, "_subset-traits", "_all-traits"),".pdf"), 
+          width = 2100 / 72 * ncol(table_to_use) / 80, 
+          height = 500 / 72 + ifelse(group_by_tissue_type, disp_amount * 0.75, 0), 
+          family="Arial Unicode MS")
 par(xpd = T, 
     mar = c(6,
             0 + ifelse(subset_to_traits, 4, 0),
@@ -2861,7 +2900,7 @@ for(ri in 1:nrow(table_to_use)){
   for(ci in 1:ncol(table_to_use)){
     if(ri == 1){
       text(x = ci+0.5, y = -0.9, pos = 2, srt = 45,
-           labels = trait_categories$new_Phenotype[match(colnames(table_to_use)[ci], trait_categories$Tag)])
+           labels = gsub("_Scatter", "", trait_categories$new_Phenotype[match(colnames(table_to_use)[ci], trait_categories$Tag)]))
       rect(xleft = ci + 1/2,
            xright = ci - 1/2,
            ybottom = ri - 1/2 - 1,
@@ -2984,8 +3023,7 @@ for(i in 1:n_legend_labels_to_use){
 #overall rect for 0
 rect(xleft = ncol(table_to_use) + x_adj + 2 + 1/2,
      xright = ncol(table_to_use) + x_adj + 2 - 1/2,
-     ybottom = min(legend_ylocs) - diff(range(legend_ylocs)) / max(table_to_use) * 5 + 
-       yb_adjust + 0.5 + ifelse(subset_to_traits,4,0),
+     ybottom = min(legend_ylocs) - diff(range(legend_ylocs))/50,
      ytop =  max(legend_ylocs))
 
 #legend for significance
@@ -3003,15 +3041,15 @@ if(incl_significance){
 
 #legend for trait categories
 if(trait_category_legend_below){
-  x_adj2 <- x_adj - 2.5
-  y_adj2 <- y_adj - 2.5
+  x_adj2 <- 0
+  y_adj2 <- 2.5
   for(i in 1:length(categories_represented)){
-    rect(xleft = -1/2 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i],
-         xright = 1/2 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i],
+    rect(xleft = -1/2 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i] + x_adj2,
+         xright = 1/2 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i] + x_adj2,
          ybottom = -11,
          ytop = -10,
          col = category_colors[categories_represented[i]], border = 1)
-    text(labels = categories_represented[i], pos = 4, y = -10.5, x = 0.35 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i])
+    text(labels = categories_represented[i], pos = 4, y = -10.5, x = x_adj2 + 0.35 + i + cumsum(c(0,strwidth(categories_represented, units = "user") + 1))[i])
     #draw circle?
     arc(t1 = 3*pi/2, t2 = pi/2, r1 = 10.5 / 2, r2 = 10.5 / 2, center = c(0,-10.5/2), lwd = 2, res = 100, adjx = ifelse(order_by_counts, 1, 1))
     points(0, 0, pch = -9658, cex = 2)
@@ -3035,8 +3073,8 @@ segments(x0 = -2, x1 = 0.5, y0 = nrow(table_to_use) + 3 + ifelse(group_by_tissue
          y1 = nrow(table_to_use) + 1 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), lwd = 2)
 segments(x0 = -2, x1 = 0.5, y0 = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), 
          y1 = nrow(table_to_use) + 2.5 + ifelse(use_range_for_maginal_labels, 0, -0.5) + 
-           ifelse(order_by_counts, 0, 0) + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0) + 
-           ifelse(subset_to_traits, 0, 1.5), lwd = 2)
+           ifelse(order_by_counts, 0, -0.8) + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0) + 
+           ifelse(subset_to_traits, 1, 1.5), lwd = 2)
 text(x = -2, y = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), pos = 2, 
      labels = paste0(ifelse(use_range_for_maginal_labels, "total", "max"), " # of\nTWAS hits"))
 
@@ -3048,7 +3086,7 @@ segments(x0 = ncol(table_to_use) + 2, x1 = ncol(table_to_use) + 1.75 +
            ifelse(subset_to_traits, 0, 1.25), 
          y0 = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), 
          y1 = nrow(table_to_use) + 0.75 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), lwd = 2)
-text(x = ncol(table_to_use) + 2, y = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), pos = 3, 
+text(x = ncol(table_to_use) + 2 + ifelse(order_by_counts, 0, 2), y = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), pos = 3, 
      labels = paste0(ifelse(use_range_for_maginal_labels, "total", "max"), " # of DEGs"))
 
 
@@ -3823,6 +3861,16 @@ plot(data$count_all / data$total_all, data$count_inters / data$total_inters,
      cex = data$total_inters / max(data$total_inters) * 5, pch = 19, col = adjustcolor(1,0.5))
 abline(0,1,lwd=2,lty=2,col=adjustcolor(2,0.5))
 abline(h=0.5,lwd=2,lty=2,col=adjustcolor(1,0.5))
+
+#make slightly fancier plot
+pchs <- category_shapes[traitwise_partitions$Category[match(data$trait, traitwise_partitions$Tag)]]
+pchs[is.na(pchs)] <- 1
+plot(data$count_all / data$total_all, data$count_inters / data$total_inters,
+     main = "", 
+     pch = pchs,
+     cex = data$total_inters / max(data$total_inters) * 5, col = adjustcolor(tissue_cols[data$tissue],0.5))
+abline(h=0.5,lwd=2,lty=2,col=adjustcolor(1,0.5))
+abline(v=0.5,lwd=2,lty=2,col=adjustcolor(1,0.5))
 
 
 basic_posteriors_masses <- 1 - pbeta(q = 0.5, shape1 = 1 + data$count_inters, shape2 = 1 + data$total_inters - data$count_inters)
@@ -4748,6 +4796,7 @@ d <- list(count = subdata$count_inters,
           gcor = gcor
 )
 
+base = "deviation_from_half"
 stan_program <- '
 data {
     int<lower=1> row_n;
@@ -4799,53 +4848,53 @@ generated quantities {
 }
 '
 
-stan_program <- '
-data {
-    int<lower=1> row_n;
-    int<lower=1> col_n;
-    int<lower=1> colcat_n;
-    int<lower=1,upper=row_n> row_index[row_n * col_n];
-    int<lower=1,upper=col_n> col_index[row_n * col_n];
-    int<lower=1,upper=colcat_n> colcat_index[col_n];
-    int<lower=0> count[row_n * col_n];
-    int<lower=0> total[row_n * col_n];
-    corr_matrix[col_n] gcor;
-}
-transformed data {
-    int<lower=1> n = row_n * col_n;
-}
-parameters {
-    real<lower=0, upper=1> prop_gcor;
-
-    vector[col_n] raw_col_bias;
-    vector<lower=0>[colcat_n] raw_colcat_bias_sd;
-    real<lower=0> colcat_bias_sd2;
-    
-    vector[n] raw_logodds;
-    vector<lower=0>[col_n] raw_within_col_sd;
-    real<lower=0> within_col_sd2;
-}
-transformed parameters {
-    corr_matrix[col_n] averaged_corrmat = gcor * prop_gcor + diag_matrix(rep_vector(1.0, col_n)) * (1-prop_gcor);
-    vector[col_n] col_bias = cholesky_decompose(averaged_corrmat) * raw_col_bias .* raw_colcat_bias_sd[colcat_index] * colcat_bias_sd2;
-    vector[n] logodds = raw_logodds .* raw_within_col_sd[col_index] * within_col_sd2;
-}
-model {
-
-    raw_col_bias ~ std_normal();
-    raw_colcat_bias_sd ~ std_normal();
-    colcat_bias_sd2 ~ normal(0,2);
-    
-    raw_logodds ~ std_normal();
-    raw_within_col_sd ~ std_normal();
-    within_col_sd2 ~ normal(0,2);
-
-    count ~ binomial_logit(total, logodds);
-}
-generated quantities {
-    vector[n] cell_total_prob_bias = inv_logit(logodds) - 0.5;
-}
-'
+# stan_program <- '
+# data {
+#     int<lower=1> row_n;
+#     int<lower=1> col_n;
+#     int<lower=1> colcat_n;
+#     int<lower=1,upper=row_n> row_index[row_n * col_n];
+#     int<lower=1,upper=col_n> col_index[row_n * col_n];
+#     int<lower=1,upper=colcat_n> colcat_index[col_n];
+#     int<lower=0> count[row_n * col_n];
+#     int<lower=0> total[row_n * col_n];
+#     corr_matrix[col_n] gcor;
+# }
+# transformed data {
+#     int<lower=1> n = row_n * col_n;
+# }
+# parameters {
+#     real<lower=0, upper=1> prop_gcor;
+# 
+#     vector[col_n] raw_col_bias;
+#     vector<lower=0>[colcat_n] raw_colcat_bias_sd;
+#     real<lower=0> colcat_bias_sd2;
+#     
+#     vector[n] raw_logodds;
+#     vector<lower=0>[col_n] raw_within_col_sd;
+#     real<lower=0> within_col_sd2;
+# }
+# transformed parameters {
+#     corr_matrix[col_n] averaged_corrmat = gcor * prop_gcor + diag_matrix(rep_vector(1.0, col_n)) * (1-prop_gcor);
+#     vector[col_n] col_bias = cholesky_decompose(averaged_corrmat) * raw_col_bias .* raw_colcat_bias_sd[colcat_index] * colcat_bias_sd2;
+#     vector[n] logodds = raw_logodds .* raw_within_col_sd[col_index] * within_col_sd2;
+# }
+# model {
+# 
+#     raw_col_bias ~ std_normal();
+#     raw_colcat_bias_sd ~ std_normal();
+#     colcat_bias_sd2 ~ normal(0,2);
+#     
+#     raw_logodds ~ std_normal();
+#     raw_within_col_sd ~ std_normal();
+#     within_col_sd2 ~ normal(0,2);
+# 
+#     count ~ binomial_logit(total, logodds);
+# }
+# generated quantities {
+#     vector[n] cell_total_prob_bias = inv_logit(logodds) - 0.5;
+# }
+# '
 
 
 if(!exists("curr_stan_program") || stan_program != curr_stan_program){
@@ -5215,29 +5264,33 @@ trait <- twas_with_hits[grep(twas_with_hits, pattern = "alzhei", ignore.case = T
 
 
 trait <- twas_with_hits[grep(twas_with_hits, pattern = "Body_fat_percentage", ignore.case = T)][1]
-trait <- 
 trait <- twas_with_hits[grep(twas_with_hits, pattern = "cholesterol", ignore.case = T)][1]
 trait <- twas_with_hits[grep(twas_with_hits, pattern = "asthma", ignore.case = T)][1]
 
-trait_patts <- c()
-trait_patt <- "trigl"
-trait <- intersect(twas_with_hits, trait_categories$Tag[grep(trait_categories$new_Phenotype, pattern = "trigl", ignore.case = T)])[1]
+trait_patt <- trait_patts[4]
+trait <- intersect(twas_with_hits, trait_categories$Tag[grep(trait_categories$new_Phenotype, pattern = trait_patt, ignore.case = T)])[1]
 
 cols = list(Tissue=tissue_cols[names(motrpac_gtex_map)], 
             Time=group_cols[paste0(c(1,2,4,8), "w")],
             Sex=sex_cols[c('male','female')])
 tissue_names <- sapply(strsplit(names(cols$Tissue), "-"), function(x) paste0(x[ifelse(length(x) == 2, c(2), list(2:3))[[1]]], collapse = " "))
 
-
-
 #plotting params
 plot_gene_names <- T
+trait_patts <- c("triglycerides", "rheumatoid_arthritis", "high_cholesterol", "asthma_ukbs")
+# trait_patts <- c("triglycerides")
 
-cairo_pdf(paste0("~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect_in_", trait,".pdf"), 
-          width = 1400 / 72, height = 500 / 72, family="Arial Unicode MS")
-par(mfrow = c(1,2), xpd = NA, mar = c(5,5,5,17))
+
+cairo_pdf(paste0("~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect.pdf"), 
+          width = 1400 / 72, height = 500 / 72 * length(trait_patts), family="Arial Unicode MS", pointsize = 18)
+par(mfrow = c(length(trait_patts),2), xpd = NA, mar = c(5,5,5,17))
 lwd <- 3
 tissue_name_cex <- 1.2
+
+for(trait_patt in trait_patts){
+  trait <- intersect(twas_with_hits, trait_categories$Tag[grep(trait_categories$new_Phenotype, pattern = trait_patt, ignore.case = T)])[1]
+  
+
 for(sex in c("male", "female")){
   
   #retrieve data
@@ -5282,7 +5335,7 @@ for(sex in c("male", "female")){
       xylocs_tissues_genes$x <- 5.25
       xylocs_tissues_genes$y <- xylocs_tissue_names$y[match(xylocs_tissues_genes$tissue, rownames(xylocs_tissue_names))]
       xylocs_tissues_genes$y <- xylocs_tissues_genes$y + 1:length(xylocs_tissues_genes$y)/1E4
-      xylocs_tissues_genes$y <- seq(max(xylocs_tissue_names$y) + 0.075, min(xylocs_tissue_names$y) - 0.15, length.out = nrow(xylocs_tissues_genes))
+      xylocs_tissues_genes$y <- seq(1.15, -0.15, length.out = nrow(xylocs_tissues_genes))
       xylocs_tissues_genes_locs <- FField::FFieldPtRep(coords = cbind(xylocs_tissues_genes$x,
                                                                       xylocs_tissues_genes$y * 500),
                                                        rep.fact = 30, adj.max = 5, iter.max = 5E3)
@@ -5378,13 +5431,21 @@ for(sex in c("male", "female")){
              col = cols$Tissue[tissue], lty = 3)
   }
   
-  legend(x = 1, y = 1.5, legend = tissue_names,
-         col = cols$Tissue, lwd = 3, ncol = 4, cex = 1, border = NA, seg.len = 1, bg = NA, bty = "n", x.intersp = 0.25, text.width = 0.65)
+  # legend(x = 1, y = 1.5, legend = tissue_names,
+  #        col = cols$Tissue, lwd = 3, ncol = 4, cex = 1, border = NA, seg.len = 1, bg = NA, bty = "n", x.intersp = 0.25, text.width = 0.65)
   # segments(x0 = 0.9, y0 = 0.5, x1 = 4.1, y1 = 0.5, lty = 3, lwd = 3, col = "lightgrey")
   
 }
+
+}
+
 dev.off()
 
+pdftools::pdf_combine(c("~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect_in_UKB_20002_1111_self_reported_asthma.pdf",
+                        "~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect_in_UKB_20002_1473_self_reported_high_cholesterol.pdf",
+                        "~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect_in_GLGC_Mc_TG.pdf",
+                        "~/Documents/Documents - nikolai/pass1b_fig8_DE_protective_effect_in_RA_OKADA_TRANS_ETHNIC.pdf"),
+                      output = paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/multi-trait-trajectories.pdf"))
 
 #### plot raw scatterplot ####
 category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
@@ -5823,7 +5884,9 @@ if(subset_to_traits){
   traits_to_plot <- twas_with_hits
 }
 categories_represented <- unique(traitwise_partitions$Category[match(traits_to_plot, traitwise_partitions$Tag)])
-
+categories_represented <- gsub("\\ .*", "", gsub("\\-.*", "", categories_represented))
+category_colors <- c(category_colors, setNames(category_colors[sapply(categories_represented, function(cati) grep(cati, names(category_colors))[1])], 
+                                               categories_represented)[!(categories_represented %in% names(category_colors))])
 
 cols = list(Tissue=tissue_cols[names(motrpac_gtex_map)], 
             Time=group_cols[paste0(c(1,2,4,8), "w")],
@@ -5836,10 +5899,10 @@ tissue_names <- sapply(strsplit(names(cols$Tissue), "-"), function(x) paste0(x[i
 trait_category_legend_below <- T
 
 #do the plotting
-plot(100,100, xlim = c(3,length(traits_to_plot)), ylim = range(deg_sigtwas_proportion_posterior_mean), xpd=NA, 
+plot(100,100, xlim = c(3,length(traits_to_plot)), ylim = range(deg_sigtwas_proportion_posterior_mean[,traits_to_plot]), xpd=NA, 
      ylab = "", xlab = "", xaxt = "n", 
      yaxt = "n", bty="n", cex.lab = 2, cex.axis = 1.25)
-text(label = "Proportion Positive Effects on GWAS Trait", x = par("usr")[1] - diff(par("usr")[1:2])/10, 
+text(label = "Posterior Mean Bias (logit-scale)\nin Positive Effects on GWAS Trait", x = par("usr")[1] - diff(par("usr")[1:2])/15, 
      y = mean(par("usr")[3:4]), srt = 90, pos = 3,
      cex = 1.75)
 
@@ -5852,7 +5915,7 @@ for(sex in c("male", "female")[1]){
   order_traits_to_plot <- order(mean_freq, decreasing = T)
   
   #plot faded positive and negative regions
-  yseq <- round(seq(min(deg_sigtwas_proportion_posterior_mean) - 0.025, max(deg_sigtwas_proportion_posterior_mean) + 0.025, length.out = 6), 2)
+  yseq <- round(seq(min(deg_sigtwas_proportion_posterior_mean[,traits_to_plot]) - 0.0025, max(deg_sigtwas_proportion_posterior_mean[,traits_to_plot]) + 0.0025, length.out = 9), 2)
   rect(xl = 1, xr = length(traits_to_plot) + 2, yb = 0.5, ytop = max(yseq),
        col = grDevices::adjustcolor("red", 0.1), border = NA)
   rect(xl = 1, xr = length(traits_to_plot) + 2, yb = min(yseq), ytop = 0.5,
@@ -5861,14 +5924,14 @@ for(sex in c("male", "female")[1]){
   #vertical axis
   segments(x0 = 1 - length(traits_to_plot) * 0.005, x1 = 1 - 3 * 0.04, y0 = yseq, y1 = yseq, lwd = 2)
   segments(x0 = 1 - 3 * 0.02, x1 = 1 - 3 * 0.02, y0 = min(yseq), y1 = max(yseq), lwd = 2)
-  text(x = 1 - 3 * 0.05, y = yseq, labels = yseq, pos = 2, cex = 1.5)
+  text(x = 1 - 3 * 0.05, y = yseq, labels = round(logit(yseq), 2), pos = 2, cex = 1.5)
   
   #horizontal axis
-  text(1:length(traits_to_plot) + 1.5, min(yseq)-0.0275, srt = 45, pos = 2,
+  text(1:length(traits_to_plot) + 1.5, min(yseq) - diff(range(yseq)) / 10, srt = 45, pos = 2,
        labels = paste0(ifelse(trait_sigs[traits_to_plot][order_traits_to_plot], "♦ ", ""), 
                        trait_categories$new_Phenotype[match(traits_to_plot[order_traits_to_plot], trait_categories$Tag)]), 
        cex = 1.125, col = 1)
-  segments(1:length(traits_to_plot) + 1, min(yseq)-0.01, 1:length(traits_to_plot) + 1, max(yseq), col = adjustcolor(1, 0.2), lty = 2)
+  segments(1:length(traits_to_plot) + 1, min(yseq) - diff(range(yseq)) / 15, 1:length(traits_to_plot) + 1, max(yseq), col = adjustcolor(1, 0.2), lty = 2)
   
   #plot points
   points(1:length(traits_to_plot)+1, y = sort(mean_freq[traits_to_plot], decreasing = T), pch = "*", cex = 3)
@@ -5877,7 +5940,7 @@ for(sex in c("male", "female")[1]){
     
     #plot category blocks
     rect(xleft = which(order_traits_to_plot == trait_i) + 1/2, xright = which(order_traits_to_plot == trait_i) + 3/2,
-         ybottom = min(yseq)-0.02, ytop = min(yseq)-0.01,
+         ybottom = min(yseq)- diff(range(yseq)) / 30, ytop = min(yseq)-diff(range(yseq)) / 14,
          col = category_colors[trait_categories$Category[match(traits_to_plot[trait_i], trait_categories$Tag)]])
     
     
@@ -5905,60 +5968,62 @@ for(sex in c("male", "female")[1]){
   
   #legend for tissues
   points(x = rep(length(traits_to_plot) + 3, length(cols$Tissue)), 
-         y = seq(mean(yseq), max(yseq), length.out = length(cols$Tissue)), 
+         y = seq(mean(yseq)-diff(range(yseq)) / 15, max(yseq), length.out = length(cols$Tissue)), 
          col = adjustcolor(cols$Tissue, 0.5),
          pch = 19, cex = 2)
   text(x = rep(length(traits_to_plot) + 3.25, length(cols$Tissue)), 
-       y = seq(mean(yseq), max(yseq), length.out = length(cols$Tissue)), 
+       y = seq(mean(yseq)-diff(range(yseq)) / 15, max(yseq), length.out = length(cols$Tissue)), 
        pos = 4, pch = 19, cex = 1,
        labels = MotrpacBicQC::tissue_abbr[names(cols$Tissue)])
   
   points(x = length(traits_to_plot) + 3, 
-         y = min(seq(mean(yseq), max(yseq), length.out = length(cols$Tissue))) - 0.025, 
+         y = mean(yseq)-diff(range(yseq)) / 7, 
          col = "black", pch = "*", cex = 3)
   text(x = length(traits_to_plot) + 3.25, cex = 1.1,
-       y = min(seq(mean(yseq), max(yseq), length.out = length(cols$Tissue))) - 0.0275, 
+       y = mean(yseq)-diff(range(yseq)) / 6.5, 
        pos = 4, labels = "Posterior\nMean")
   
   #legend for tissue size
   n_pts <- 5
   pt_size_logs <- seq(1, log(max(as.numeric(deg_sigtwas_proportion[,,"8w","n",sex]), na.rm = T)) / log(2), length.out = n_pts)
   pt_size_legend <- round(2^pt_size_logs)
-  per_pt_incr <- 0.01
+  per_pt_incr <- diff(range(yseq)) / 200
   text(x = length(traits_to_plot) + 2.25, 
-       y = 0.2875 + per_pt_incr * n_pts + sum(pt_size_legend^0.25/100), 
+       y = min(yseq) - diff(range(yseq)) / 5.25 + sum(pt_size_legend^0.25/800) + sum(rep(per_pt_incr, n_pts)) + diff(range(yseq)) / 7, 
        pos = 4, pch = 19, cex = 1.1,
        labels = "Sample Size")
   points(x = rep(length(traits_to_plot) + 3.25, n_pts), 
-         y = 0.362 + cumsum(pt_size_legend^0.25/800) + cumsum(rep(per_pt_incr, n_pts)), 
+         y = min(yseq) - diff(range(yseq)) / 4 + cumsum(pt_size_legend^0.25/800) + cumsum(rep(per_pt_incr, n_pts)) + diff(range(yseq)) / 7, 
          col = adjustcolor(1, 0.5),
          pch = 19, cex = pt_size_legend^0.25)
   text(x = rep(length(traits_to_plot) + 3.25, n_pts) + pt_size_legend^0.25/10, 
-       y = 0.362 + cumsum(pt_size_legend^0.25/800) + cumsum(rep(per_pt_incr, n_pts)), 
+       y = min(yseq) - diff(range(yseq)) / 4 + cumsum(pt_size_legend^0.25/800) + cumsum(rep(per_pt_incr, n_pts)) + diff(range(yseq)) / 7, 
        pos = 4, pch = 19, cex = 1,
        labels = pt_size_legend)
   
   #legend for diamonds
-  text(x = length(traits_to_plot) + 2.25, cex = 1,
-       y = min(yseq) + 0.01, 
+  text(x = length(traits_to_plot) * 1.055, cex = 1,
+       y = min(yseq) + diff(range(yseq)) / 4.5 + ifelse(subset_i == 1, 0, 0.00325), 
        pos = 4, labels = paste0("♦ indicates\nPr(enr. or dep.)\n> ", 1-alpha_post))
   
   
   #legend for categories
   if(trait_category_legend_below){
-    yadj <- 0.4875
+    yadj <- 0
+    yloc_factor <- ifelse(subset_i == 1, 1.8, 2)
     for(i in 1:length(categories_represented)){
       rect(xleft = 0 + i + cumsum(c(0,strwidth(categories_represented, cex = 1.25, units = "user") + 1))[i],
            xright = 1 + i + cumsum(c(0,strwidth(categories_represented, cex = 1.25, units = "user") + 1))[i],
-           ybottom = -0.345 + yadj,
-           ytop = -0.335 + yadj,
+           ybottom = min(yseq) - diff(range(yseq)) / yloc_factor - diff(range(yseq)) / 14,
+           ytop = min(yseq) - diff(range(yseq)) / yloc_factor - diff(range(yseq)) / 30,
            col = category_colors[categories_represented[i]], border = 1)
       text(labels = categories_represented[i], pos = 4, 
-           y = -0.34 + yadj, cex = 1.25, x = 0.85 + i + cumsum(c(0,strwidth(categories_represented, cex = 1.25, units = "user") + 1))[i])
+           y = min(yseq) - diff(range(yseq)) / yloc_factor - diff(range(yseq)) / 18, cex = 1.25, x = 0.85 + i + cumsum(c(0,strwidth(categories_represented, cex = 1.25, units = "user") + 1))[i])
       #draw circle?
-      arc(t1 = 3*pi/2, t2 = pi/2-1E-6, r1 = (0.34-0.015-yadj) / 2, r2 = (0.34-0.025-yadj) / 2, 
-          center = c(0.5, (-0.34 + yadj + min(yseq) - 0.01)/2), lwd = 3, res = 50, adjx = 40 + ifelse(subset_i == 1, 0, 15))
-      points(0.5, min(yseq)-0.015, pch = -9658, cex = 3)
+      ends_y <- c(min(yseq) - diff(range(yseq)) / yloc_factor - diff(range(yseq)) / 18, min(yseq) - diff(range(yseq)) / 18)
+      arc(t1 = 3*pi/2, t2 = pi/2+1E-6, r1 = diff(range(ends_y))/2, r2 = diff(range(ends_y))/2, 
+          center = c(0.5, mean(ends_y)), lwd = 3, res = 50, adjx = 210 + ifelse(subset_i == 1, 30, 50))
+      points(0.5, ends_y[2], pch = -9658, cex = 3)
     }
   } else {
     x_adj2 <- x_adj - 2.5
@@ -5975,7 +6040,7 @@ for(sex in c("male", "female")[1]){
   
 }
 
-text(paste0("Traits with ", ifelse(subset_i == 1, "Positive", "Negative"), " Posterior Mean Bias"), x = mean(par("usr")[1:2]), y = max(yseq) + 0.02, cex = 2.25, font = 2)
+text(paste0("Traits with ", ifelse(subset_i == 1, "Positive", "Negative"), " Posterior Mean Bias"), x = mean(par("usr")[1:2]), y = max(yseq) + diff(range(yseq)) / 15, cex = 2.25, font = 2)
 
 }
 dev.off()

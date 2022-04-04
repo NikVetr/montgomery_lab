@@ -76,12 +76,50 @@ for(i in 1:nrow(log_files)){
 }
 log_files$gwas <- stringr::str_replace_all(log_files$gwas, "imputed_", "")
 
+#snag estimated heritabilities
+log_files$pval <- 1 - pnorm(log_files$h2 / log_files$h2se)
+estimated_h2_ldsc <- sapply(setNames(unique(log_files$gwas), unique(log_files$gwas)), function(gwas) mean(log_files$h2[log_files$gwas == gwas]))
+estimated_h2_ldsc[estimated_h2_ldsc < 0] <- min(estimated_h2_ldsc[estimated_h2_ldsc > 0])
+estimated_h2_ldsc_pval <- sapply(setNames(unique(log_files$gwas), unique(log_files$gwas)), function(gwas) mean(log_files$pval[log_files$gwas == gwas]))
+
+mesc_output_basic <- fread(file = "~/data/smontgom/mesc_out_basic.txt")
+estimated_h2_mesc <- mesc_output_basic[mesc_output_basic$Quantity == "h2",]
+estimated_h2_mesc <- sapply(setNames(unique(estimated_h2_mesc$trait), unique(estimated_h2_mesc$trait)), 
+                            function(gwas) mean(estimated_h2_mesc$Estimate[estimated_h2_mesc$trait == gwas]))
+estimated_h2_mesc[estimated_h2_mesc < 0] <- min(estimated_h2_mesc[estimated_h2_mesc > 0])
+estimated_h2_mesc_pval <- mesc_output_basic[mesc_output_basic$Quantity == "h2",]
+estimated_h2_mesc_pval <- sapply(setNames(unique(estimated_h2_mesc_pval$trait), unique(estimated_h2_mesc_pval$trait)), 
+                                 function(gwas) mean(estimated_h2_mesc_pval$Estimate_pval[estimated_h2_mesc_pval$trait == gwas]))
+
+estimated_h2med_mesc <- mesc_output_basic[mesc_output_basic$Quantity == "h2med",]
+estimated_h2med_mesc <- sapply(setNames(unique(estimated_h2med_mesc$trait), unique(estimated_h2med_mesc$trait)), 
+                            function(gwas) mean(estimated_h2med_mesc$Estimate[estimated_h2med_mesc$trait == gwas]))
+estimated_h2med_mesc[estimated_h2med_mesc < 0] <- min(estimated_h2med_mesc[estimated_h2med_mesc > 0])
+estimated_h2med_mesc_pval <- mesc_output_basic[mesc_output_basic$Quantity == "h2med",]
+estimated_h2med_mesc_pval <- sapply(setNames(unique(estimated_h2med_mesc_pval$trait), unique(estimated_h2med_mesc_pval$trait)), 
+                                 function(gwas) mean(estimated_h2med_mesc_pval$Estimate_pval[estimated_h2med_mesc_pval$trait == gwas]))
+
+estimated_h2med_over_h2_mesc <- mesc_output_basic[mesc_output_basic$Quantity == "h2med",]
+estimated_h2med_over_h2_mesc <- sapply(setNames(unique(estimated_h2med_over_h2_mesc$trait), unique(estimated_h2med_over_h2_mesc$trait)), 
+                               function(gwas) mean(estimated_h2med_over_h2_mesc$Estimate_over_h2[estimated_h2med_over_h2_mesc$trait == gwas]))
+estimated_h2med_over_h2_mesc[estimated_h2med_over_h2_mesc < 0] <- min(estimated_h2med_over_h2_mesc[estimated_h2med_over_h2_mesc > 0])
+estimated_h2med_over_h2_mesc_pval <- mesc_output_basic[mesc_output_basic$Quantity == "h2med",]
+estimated_h2med_over_h2_mesc_pval <- sapply(setNames(unique(estimated_h2med_over_h2_mesc_pval$trait), unique(estimated_h2med_over_h2_mesc_pval$trait)), 
+                                    function(gwas) mean(estimated_h2med_over_h2_mesc_pval$Estimate_over_h2_pval[estimated_h2med_over_h2_mesc_pval$trait == gwas]))
+
+bonf_p_h2 <- 0.05 / length(estimated_h2med_over_h2_mesc_pval)
+
+# plot(estimated_h2_mesc, estimated_h2_ldsc[names(estimated_h2_mesc)])
+# plot(log10(estimated_h2_mesc), log10(estimated_h2_ldsc[names(estimated_h2_mesc)]))
+# abline(0,1)
+
 #subset to insteresting trait categories
 trait_categories <- read.csv("~/data/smontgom/gwas_metadata.csv", header = T)
 traitwise_partitions <- trait_categories[,c("Tag", "Category")]
 traitname_map <- trait_categories[,c("Tag", "new_Phenotype")]
 log_files$trait_category <- traitwise_partitions$Category[match(log_files$gwas, traitwise_partitions$Tag)]
 salient.categories <- c("Cardiometabolic", "Aging", "Anthropometric", "Immune", "Psychiatric-neurologic")
+salient.categories <- unique(traitwise_partitions$Category)
 log_files <- log_files[log_files$trait_category %in% salient.categories,]
 
 total_h2_sigma_thresh <- 7
@@ -151,9 +189,26 @@ sum(gcor_mat_sig, na.rm = T) - nrow(gcor_mat_sig)
 
 #get a few last graphical parameters
 unique_trait_categories <- unique(traitwise_partitions$Category)
-category_colors <- RColorBrewer::brewer.pal(length(unique_trait_categories), "Dark2")
-names(category_colors) <- sort(salient.categories)
+if(length(salient.categories) < 9){
+  category_colors <- RColorBrewer::brewer.pal(length(salient.categories), "Dark2")
+  names(category_colors) <- sort(salient.categories)  
+} else {
+  category_colors <- RColorBrewer::brewer.pal(5, "Dark2")
+  names(category_colors) <- sort(c("Cardiometabolic", "Aging", "Anthropometric", 
+                                   "Immune", "Psychiatric-neurologic"))
+  cats_leftover <- setdiff(salient.categories, names(category_colors))
+  cols_leftover <- setdiff(RColorBrewer::brewer.pal(8, "Dark2"), category_colors)
+  n_cols_needed <- length(cats_leftover) - length(cols_leftover)
+  if(n_cols_needed > 0){
+    extra_cols <- c(cols_leftover, RColorBrewer::brewer.pal(n_cols_needed, "Set2"))
+  } else {
+    extra_cols <- cols_leftover
+  }
+  names(extra_cols) <- cats_leftover
+  category_colors <- c(category_colors, extra_cols)
+}
 cols$category <- category_colors
+
 # cols$category <- cols$Tissue[1:length(unique_trait_categories)+1]
 # names(cols$category) <- unique_trait_categories
 
@@ -161,51 +216,126 @@ cols$category <- category_colors
 
 grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/figure1_high-level-overview.pdf"), 
                      width = 1300 / 72, height = 600 / 72, family="Arial Unicode MS")
-par(mar = c(6,5,3,8), mfrow = c(1,2), xpd = NA)
+layout(t(c(rep(1,1),rep(2,1))))
+
+par(mar = c(6,7,3,6), xpd = NA)
 # par(mar = c(6,5,3,4), xpd = NA)
 # layout(mat = t(as.matrix(c(rep(1,5), rep(2,6)))))
 
-
 #plotting params
 traits <- rownames(gcor_mat)
+ncols <- 101
 rate = 0.001
-exp_dist_cols <- round(cumsum(c(1, dexp(1:100, rate = rate) / min(dexp(1:100, rate = rate)))))
+incl_h2s <- T
+exp_dist_cols <- round(cumsum(c(1, dexp(1:(ncols-1), rate = rate) / min(dexp(1:(ncols-1), rate = rate)))))
 heatcols <- viridis::magma(max(exp_dist_cols))[exp_dist_cols]
 heatcols <- RColorBrewer::brewer.pal(11, "RdBu")[-c(1,11)]
-heatcols <- rev(colorRampPalette(heatcols)(101))
+heatcols <- rev(colorRampPalette(heatcols)(ncols))
+
+pow <- 1
+
+h2_cols <- rev(viridis::mako(n = ncols))
+h2_cols <- sapply(1:ncols, function(coli) adjustcolor(h2_cols[coli], alpha.f = ((10+coli)/(ncols+10))^pow))
+minrangeh2 <- c(min(log10(c(estimated_h2_ldsc, estimated_h2_mesc))), diff(range(log10(c(estimated_h2_ldsc, estimated_h2_mesc)))))
+h2med_cols <- rev(viridis::rocket(n = ncols))
+h2med_cols <- sapply(1:ncols, function(coli) adjustcolor(h2med_cols[coli], alpha.f = ((10+coli)/(ncols+10))^pow))
+minrangeh2med <- c(min(log10(estimated_h2med_mesc)), diff(range(log10(estimated_h2med_mesc))))
+h2medoh2_cols <- rev(viridis::rocket(n = ncols))
+h2medoh2_cols <- sapply(1:ncols, function(coli) adjustcolor(h2medoh2_cols[coli], alpha.f = ((10+coli)/(ncols+10))^pow))
+minrangeh2medoh2 <- c(min(log10(estimated_h2med_over_h2_mesc)), diff(range(log10(estimated_h2med_over_h2_mesc))))
+
 # plot(1:length(heatcols), 1:length(heatcols), cex = 2, pch = 19, col = heatcols)
 
 plot(1,1,xlim = c(0,length(traits)), ylim = c(0,length(traits)), xpd = NA,
      col = "white", xaxt = "n", yaxt = "n", frame.plot = FALSE, xlab = "", ylab = "")
 sorted_row_inds <- order(cmdscale(1-gcor_mat, k = 1))
 for(rowi in 1:length(traits)){
-  text(labels = traits[sorted_row_inds[rowi]], x = length(traits), y = length(traits) - rowi + 1, 
+  text(labels = traits[sorted_row_inds[rowi]], x = length(traits) + ifelse(incl_h2s, 5, 0), y = length(traits) - rowi + 1 - 0.1, 
        col = cols$category[traitwise_partitions$Category[match(traitname_map$Tag[
          match(traits[sorted_row_inds[rowi]], traitname_map$new_Phenotype)],traitwise_partitions$Tag)]]
-       , pos = 4, xpd = NA, cex = 0.75, font = 1)
+       , pos = 4, xpd = NA, cex = 0.45, font = 1)
   for(colj in 1:length(traits)){
     rect(yb = length(traits) - rowi + 1 - 1/2, yt = length(traits) - rowi + 1 + 1/2, 
          xl = colj - 1/2, xr = colj + 1/2, pch = 15, cex = 1, border = NA,
          col = heatcols[round((gcor_mat[sorted_row_inds[rowi], sorted_row_inds[colj]] + 1) / 2 * 100) + 1])
     
     if(gcor_mat_sig[sorted_row_inds[rowi], sorted_row_inds[colj]]){
-      points(y = length(traits) - rowi + 1, x = colj, pch = 19, col = "white", cex = 0.4)
+      points(y = length(traits) - rowi + 1, x = colj, pch = 19, col = "white", cex = 0.2)
     }
     
     if(rowi == 1){
-      text(labels = traits[sorted_row_inds[colj]], x = colj + 1, y = 0.2, 
+      text(labels = traits[sorted_row_inds[colj]], x = colj + 1.5, y = -0.2, 
            col = cols$category[traitwise_partitions$Category[match(traitname_map$Tag[
              match(traits[sorted_row_inds[colj]], traitname_map$new_Phenotype)],traitwise_partitions$Tag)]]
-           , pos = 2, srt = 45, xpd = NA, cex = 0.6, font = 1)
+           , pos = 2, srt = 90, xpd = NA, cex = 0.45, font = 1)
     }
     
+  }
+  
+  if(incl_h2s){
+    trait_tag <- trait_categories$Tag[match(traits[sorted_row_inds[rowi]], trait_categories$new_Phenotype)]
     
     
+    rect(yb = length(traits) - rowi + 1 - 1/2, yt = length(traits) - rowi + 1 + 1/2, 
+         xl = length(traits) + 2 - 1/2, xr = length(traits) + 2 + 1/2, pch = 15, cex = 1, border = NA,
+         col = h2_cols[ceiling((log10(estimated_h2_ldsc[trait_tag]) - minrangeh2[1]) / minrangeh2[2] * 100)])
+    if(estimated_h2_ldsc_pval[trait_tag] < bonf_p_h2){
+      points(y = length(traits) - rowi + 1, x = length(traits) + 2, pch = 19, col = "white", cex = 0.2)
+    }
+    if(rowi == 1){
+      text(y = length(traits) + 2, x = length(traits) + 0.75 - 3/4, pos = 4, srt = 90,
+           labels = latex2exp::TeX(paste0("$h^{2}_{SNP}-LDSC$")), cex = 0.35)
+      segments(y1 = length(traits) + 2, x1 = length(traits) + 2 - 3/4,
+               y0 = length(traits) + 0.75, x0 = length(traits) + 2,
+               lwd = 1, lty = 3, col = "grey80")
+    }
     
+    rect(yb = length(traits) - rowi + 1 - 1/2, yt = length(traits) - rowi + 1 + 1/2, 
+         xl = length(traits) + 3 - 1/2, xr = length(traits) + 3 + 1/2, pch = 15, cex = 1, border = NA,
+         col = h2_cols[ceiling((log10(estimated_h2_mesc[trait_tag]) - minrangeh2[1]) / minrangeh2[2] * 100)])
+    if(estimated_h2_mesc_pval[trait_tag] < bonf_p_h2){
+      points(y = length(traits) - rowi + 1, x = length(traits) + 3, pch = 19, col = "white", cex = 0.2)
+    }
+    if(rowi == 1){
+      text(y = length(traits) + 2, x = length(traits) + 1.75 - 1/4, pos = 4, srt = 90,
+           labels = latex2exp::TeX(paste0("$h^{2}_{SNP}-MESC$")), cex = 0.35)
+      segments(y1 = length(traits) + 2, x1 = length(traits) + 3 - 1/4,
+               y0 = length(traits) + 0.75, x0 = length(traits) + 3,
+               lwd = 1, lty = 3, col = "grey80")
+    }
+    
+    rect(yb = length(traits) - rowi + 1 - 1/2, yt = length(traits) - rowi + 1 + 1/2, 
+         xl = length(traits) + 4 - 1/2, xr = length(traits) + 4 + 1/2, pch = 15, cex = 1, border = NA,
+         col = h2med_cols[ceiling((log10(estimated_h2med_mesc[trait_tag]) - minrangeh2med[1]) / minrangeh2med[2] * 100)])
+    if(estimated_h2med_mesc_pval[trait_tag] < bonf_p_h2){
+      points(y = length(traits) - rowi + 1, x = length(traits) + 4, pch = 19, col = "white", cex = 0.2)
+    }
+    if(rowi == 1){
+      text(y = length(traits) + 2, x = length(traits) + 2.75 + 1/4, pos = 4, srt = 90,
+           labels = latex2exp::TeX(paste0("$h^{2}_{mediated}$")), cex = 0.35)
+      segments(y1 = length(traits) + 2, x1 = length(traits) + 4 + 1/4,
+               y0 = length(traits) + 0.75, x0 = length(traits) + 4,
+               lwd = 1, lty = 3, col = "grey80")
+    }
+    
+    rect(yb = length(traits) - rowi + 1 - 1/2, yt = length(traits) - rowi + 1 + 1/2, 
+         xl = length(traits) + 5 - 1/2, xr = length(traits) + 5 + 1/2, pch = 15, cex = 1, border = NA,
+         col = h2medoh2_cols[ceiling((log10(estimated_h2med_over_h2_mesc[trait_tag]) - minrangeh2medoh2[1]) / minrangeh2medoh2[2] * 100)])
+    if(estimated_h2med_over_h2_mesc_pval[trait_tag] < bonf_p_h2){
+      points(y = length(traits) - rowi + 1, x = length(traits) + 6, pch = 19, col = "white", cex = 0.2)
+    }
+    if(rowi == 1){
+      text(y = length(traits) + 2, x = length(traits) + 3.75 + 3/4, pos = 4, srt = 90,
+           labels = latex2exp::TeX(paste0("$h^{2}_{mediated}$ / $h^{2}_{SNP}$")), cex = 0.35)
+      segments(y1 = length(traits) + 2, x1 = length(traits) + 5 + 3/4,
+               y0 = length(traits) + 0.75, x0 = length(traits) + 5,
+               lwd = 1, lty = 3, col = "grey80")
+    }
     
   }
 }
 
+#legend for correlation matrix
 xl = -2.5; xr = -0.5; yb = length(traitnames) / 3; yt = length(traitnames) / 1.5
 ydisp <- -3
 rect(xleft = xl, xright = xr, col = heatcols, border = NA,
@@ -213,18 +343,51 @@ rect(xleft = xl, xright = xr, col = heatcols, border = NA,
 rect(xleft = xl, xright = xr, ybottom = yb + ydisp, ytop = yt + ydisp)
 text(labels = -5:5/5, x = xl, pos = 2, y = seq(yb, yt, length.out = 11) + ydisp, cex = 1)
 text(x = mean(c(xl, xr)), y = yt + ydisp - 0.25, labels = latex2exp::TeX("$r_g$"), pos = 3, cex = 2, font = 2)
+
+#title
 text("Genetic Correlation Matrix", x = length(traits) / 2 + 0.5, y = length(traits) + 0.5, pos = 3, cex = 2.5, font = 2)
 
-points(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.05, pch = 15, col = cols$category[salient.categories], cex = 1.75)
-text(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.05, pos = 2, col = 1, 
+#legend for trait categories
+points(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.5, pch = 15, col = cols$category[salient.categories], cex = 1.75)
+text(rep((xl+xr)/2 + 0.5, length(salient.categories)), 1:length(salient.categories)*1.5, pos = 2, col = 1, 
      labels = gsub("-.*", "", salient.categories), cex = 0.75)
 
+#legend for bonferroni correction
 text(labels = latex2exp::TeX(paste0("• mark p-val < $10^{", round(log10(0.025  / choose(dim(gcor_mat)[1], 2)), 2), "}$")), 
      x = -0.5, y = yt + ydisp + nrow(gcor_mat)/5, cex = 0.75, srt = 90)
 text(labels = "bonferroni", x = -1.5, y = yt + ydisp + nrow(gcor_mat)/5, cex = 0.75, srt = 90, font = 3, family = "Arial")
 
 fig_label(text = "a)", region = "plot", cex = 3, shrinkX = -20, shrinkY = 1.065)
 
+#legend for h2 estimates
+xl = length(traitnames) - 4; xr = length(traitnames) - 3; yb = -12.75; yt = -0.55
+ydisp <- 0
+rect(xleft = xl, xright = xr, col = h2_cols, border = NA,
+     yb = seq(yb, yt, length.out = length(heatcols)+1)[-(length(heatcols)+1)] + ydisp, yt= seq(yb, yt, length.out = length(heatcols)+1)[-1] + ydisp)
+rect(xleft = xl, xright = xr, ybottom = yb + ydisp, ytop = yt + ydisp)
+text(labels = latex2exp::TeX(paste0("$10^{", round(seq(minrangeh2[1], minrangeh2[1] + minrangeh2[2], length.out = 5), 2), "}$")), 
+     x = xl, pos = 4, y = seq(yb, yt, length.out = 5) + ydisp, cex = 0.5)
+text(x = mean(c(xl, xr)), y = yb + ydisp + 0.25, labels = latex2exp::TeX("$h^{2}_{SNP}$"), pos = 1, cex = 0.751, font = 2)
+
+#legend for h2med estimates
+xl = length(traitnames) + 3; xr = length(traitnames) + 4; yb = -12.75; yt = -0.55
+ydisp <- 0
+rect(xleft = xl, xright = xr, col = h2med_cols, border = NA,
+     yb = seq(yb, yt, length.out = length(heatcols)+1)[-(length(heatcols)+1)] + ydisp, yt= seq(yb, yt, length.out = length(heatcols)+1)[-1] + ydisp)
+rect(xleft = xl, xright = xr, ybottom = yb + ydisp, ytop = yt + ydisp)
+text(labels = latex2exp::TeX(paste0("$10^{", round(seq(minrangeh2med[1], minrangeh2med[1] + minrangeh2med[2], length.out = 5), 2), "}$")), 
+     x = xl, pos = 4, y = seq(yb, yt, length.out = 5) + ydisp, cex = 0.5)
+text(x = mean(c(xl, xr)), y = yb + ydisp + 0.25, labels = latex2exp::TeX("$h^{2}_{mediated}$"), pos = 1, cex = 0.751, font = 2)
+
+#legend for h2med estimates
+xl = length(traitnames) + 10; xr = length(traitnames) + 11; yb = -12.75; yt = -0.55
+ydisp <- 0
+rect(xleft = xl, xright = xr, col = h2medoh2_cols, border = NA,
+     yb = seq(yb, yt, length.out = length(heatcols)+1)[-(length(heatcols)+1)] + ydisp, yt= seq(yb, yt, length.out = length(heatcols)+1)[-1] + ydisp)
+rect(xleft = xl, xright = xr, ybottom = yb + ydisp, ytop = yt + ydisp)
+text(labels = latex2exp::TeX(paste0("$10^{", round(seq(minrangeh2medoh2[1], minrangeh2medoh2[1] + minrangeh2medoh2[2], length.out = 5), 2), "}$")), 
+     x = xl, pos = 4, y = seq(yb, yt, length.out = 5) + ydisp, cex = 0.5)
+text(x = mean(c(xl, xr)) + 2.5, y = yb + ydisp + 0.25, labels = latex2exp::TeX("$h^{2}_{mediated}$ / $h^{2}_{SNP}$"), pos = 1, cex = 0.751, font = 2)
 
 #now do the tissue transcriptome correlation matrix
 zcor = as.matrix(read.table("~/data/smontgom/zcor_transcriptome_pass1b.tsv"))
@@ -272,7 +435,7 @@ tissues <- unlist(tissues)
 tissues_to_include <- tissues
 print(tissues_to_include)
 
-par(mar = c(7,10,5.5,6), xpd = NA)
+par(mar = c(7,11.5,5.5,4.5), xpd = NA)
 
 if(tissue_names_not_colors){
   nice_names[nice_names == "LUNG"] <- "LUNGS"

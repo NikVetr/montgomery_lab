@@ -244,6 +244,69 @@ mesc_output_categories[apply(cbind(ihw_trait = mesc_output_categories$enrich_pva
       bh = mesc_output_categories$h2med_enrichment_pvalue_BHadjust) < 0.05, 1, sum) > 0,]
 
 
+#### compute meta-analyzed h2med ####
+gwas_dir <- "~/repos/ldsc/gwas_sumstats/proper_format/"
+gwas_files <- list.files(gwas_dir)
+gwas_files <- gwas_files[grep("sumstats.gz", gwas_files)]
+foreach(gwas = gwas_files) %dopar% {
+  
+  #create output directory
+  tiss <- "All_Tissues"
+  tissue_dir <- paste0("~/repos/mesc/output/Enrichment/", tiss)
+  if(!dir.exists(tissue_dir)){dir.create(tissue_dir)}
+  
+  #bookkeeping
+  cat(paste0(tiss, ": ", gwas, "\n"))
+  if(readLines("~/foreach_continue.txt", warn = F) != "T"){
+    next()
+  }
+  
+  #run mesc
+  command_mesc <- paste0("python2 ./run_mesc.py ",
+                         "--h2med /Users/nikgvetr/repos/ldsc/gwas_sumstats/proper_format/", gwas, " ",
+                         "--exp-chr /Users/nikgvetr/data/smontgom/GTEx_v8_ExpressionScores/all_tissues/All_Tissues ",
+                         "--out output/Enrichment/", tiss, "/", gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), "; ")
+  command <- paste0(command_setup, command_mesc)
+  system(command)
+    
+}
+
+#### read in meta-analyzed results ####
+
+tissues_to_analyze <- list.files("~/repos/mesc/output/Enrichment/")
+mesc_output_basic <- do.call(rbind, lapply(tissues_to_analyze, function(tiss){
+  print(tiss)
+  tissue_dir <- paste0("~/repos/mesc/output/Enrichment/", tiss, "/")
+  mesc_out <- do.call(rbind, lapply(gwas_files, function(gwas){
+    file_to_read <- paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".all.h2med")
+    if(!file.exists(file_to_read)){return(NULL)}
+    enrich <- fread(paste0(tissue_dir, gsub("imputed_", "", gsub(pattern = ".txt.gz.sumstats.gz", "", gwas)), ".all.h2med"))
+    enrich$trait <- gwas
+    enrich
+  }))
+  if(is.null(mesc_out)){return(NULL)}
+  mesc_out$tissue <- tiss
+  mesc_out
+}))
+
+mesc_output_basic$Estimate_Z <- mesc_output_basic$Estimate / mesc_output_basic$`SE(Estimate)`
+mesc_output_basic$Estimate_over_h2_Z <- mesc_output_basic$Estimate_over_h2 / mesc_output_basic$`SE(Estimate_over_h2)`
+mesc_output_basic$Estimate_pval <- 1 - pnorm(mesc_output_basic$Estimate_Z)
+mesc_output_basic$Estimate_over_h2_pval <- 1 - pnorm(mesc_output_basic$Estimate_over_h2_Z)
+mesc_output_basic$trait <- gsub(".txt.gz.sumstats.gz", "", gsub("imputed_", "", mesc_output_basic$trait))
+fwrite(x = mesc_output_basic, file = "~/data/smontgom/mesc_out_basic.txt")
+
+
+mescout <- lapply(setNames(c("h2med", "h2nonmed", "h2"), c("h2med", "h2nonmed", "h2")), function (quant) 
+  mesc_output_basic[mesc_output_basic$Quantity == quant & 
+                      mesc_output_basic$Estimate > 0,]
+)
+
+mescout$h2med[order(mescout$h2med$Estimate_over_h2, decreasing = T),]
+hist(mescout$h2$Estimate, breaks = 50)
+
+
+
 #### computing expressions cores from scratch ####
 
 # bim_file <- fread("/Volumes/SSD500GB/gtex-pipeline/expression_genotypes/GTEx_v8_noChr.bim")
