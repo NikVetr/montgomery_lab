@@ -2531,6 +2531,7 @@ sum(ihw_results_FET@df$adj_pvalue < 0.05)
 sapply(1:20, function(n_bins) sum(IHW::ihw(FET_pval ~ TWAS_total, data = data_ihw, alpha = 0.05, nbins = n_bins)@df$adj_pvalue < 0.05))
 
 #### quick plot of exp vs obs freqs ####
+use_focal_vs_compl <- T
 
 traits <- unique(data1$trait)
 tissues <- unique(data1$tissue)
@@ -2546,7 +2547,7 @@ d <- list(cell_count = data1$count,
 
 
 
-cairo_pdf(paste0("~/Documents/Documents - nikolai/pass1b_fig8_DEG-TWAS_logodds.pdf"), 
+cairo_pdf(paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/pass1b_fig8_DEG-TWAS_logodds.pdf"), 
           width = 1000 / 72, height = 950 / 72, family="Arial Unicode MS", pointsize = 25)
 
 category_shapes <- setNames(15:19, salient.categories)
@@ -2559,8 +2560,19 @@ par(mar = c(5,4,3,4))
 
 
 sapply(1:nrow(signif_df), function(i) adjustcolor(tissue_cols[tissues[d$row_index[i]]], as.numeric(signif_df$signif[i] != 0) * 0.625 + 0.125))
+if(use_focal_vs_compl){
+  xvals <- (d$col_count - d$cell_count) / (d$total - d$row_count)
+  yvals <- d$cell_count / d$row_count
+} else {
+  xvals <- d$row_count / d$total * d$col_count / d$total  
+  yvals <- d$cell_count / d$total
+}
 
-plot(logit(d$row_count / d$total * d$col_count / d$total), logit(d$cell_count / d$total), xlim = c(-15,-4.25), ylim = c(-9.5,-4.25),
+
+
+
+plot(logit(xvals), logit(yvals), xlim = ifelse2(use_focal_vs_compl, c(-14,-1), c(-15,-4.25)), 
+     ylim = ifelse2(use_focal_vs_compl, c(-6, -1), c(-9.5,-4.25)),
      pch = category_shapes[traitwise_partitions$Category[match(traits[d$col_index], traitwise_partitions$Tag)]], 
      col = adjustcolor(tissue_cols[tissues[d$row_index]], 0.5), 
      cex = 1.5,
@@ -2571,11 +2583,13 @@ text(labels = "observed logit(frequency)", x = par("usr")[2] + diff(par("usr")[1
      y = mean(par("usr")[3:4]), xpd = NA, cex = 1.25)
 text(labels = "expected logit(frequency)", x = mean(par("usr")[1:2]), srt = 0, pos = 1, 
      y = par("usr")[3] - diff(par("usr")[3:4])/10, xpd = NA, cex = 1.25)
-segments(x0 = par("usr")[2], x1 = par("usr")[2] + diff(par("usr")[1:2])/100, y0 = -5:-9, y1 = -5:-9, lwd = 4, xpd = NA)
-text(labels = -5:-9, x = par("usr")[2] + diff(par("usr")[1:2])/200, srt = 0, pos = 4, 
-     y = -5:-9, xpd = NA, cex = 1.25)
-segments(x0 = -7:-3*2, x1 = -7:-3*2, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/80, lwd = 4, xpd = NA)
-text(labels = -7:-3*2, x = -7:-3*2, srt = 0, pos = 1, 
+yaxlocs <- ifelse2(use_focal_vs_compl, c(-6:-1), c(-5:-9))
+segments(x0 = par("usr")[2], x1 = par("usr")[2] + diff(par("usr")[1:2])/100, y0 = yaxlocs, y1 = yaxlocs, lwd = 4, xpd = NA)
+text(labels = yaxlocs, x = par("usr")[2] + diff(par("usr")[1:2])/200, srt = 0, pos = 4, 
+     y = yaxlocs, xpd = NA, cex = 1.25)
+xaxlocs <- ifelse2(use_focal_vs_compl, -7:-1*2, -7:-3*2)
+segments(x0 = xaxlocs, x1 = xaxlocs, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/80, lwd = 4, xpd = NA)
+text(labels = xaxlocs, x = xaxlocs, srt = 0, pos = 1, 
      y = par("usr")[3] - diff(par("usr")[3:4])/80, xpd = NA, cex = 1.25)
 abline(0,1, lty = 2, lwd = 6, col = adjustcolor(1,0.75))
 
@@ -2590,39 +2604,39 @@ bx <- (xr-xl) * buffer
 by <- (yt-yb) * buffer
 rect(xleft = xl, ybottom = yb, xright = xr, ytop = yt, lwd = 2, xpd = NA)
 
-xvals <- d$row_count / d$total * d$col_count / d$total
-yvals <- d$cell_count / d$total
-
-points(x = ((xvals - min(xvals)) / max(xvals)) * (xr - xl - 2*bx) + xl + bx, 
-       y = ((yvals - min(yvals)) / max(yvals)) * (yt - yb - 2*by) + yb + by, 
+points(x = ((xvals - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+       y = ((yvals - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
        pch = category_shapes[traitwise_partitions$Category[match(traits[d$col_index], traitwise_partitions$Tag)]], 
        col = adjustcolor(tissue_cols[tissues[d$row_index]], 0.5), 
        cex = 1)
 segments(x0 = 0 * (xr - xl - 2*bx) + xl, 
          y0 = 0 * (yt - yb - 2*by) + yb,
-         x1 = ((max(yvals) - min(xvals)) / max(xvals)) * (xr - xl - 2*bx) + xl + bx, 
-         y1 = ((max(yvals) - min(yvals)) / max(yvals)) * (yt - yb - 2*by) + yb + by, 
+         x1 = ((max(yvals, na.rm = T) - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+         y1 = ((max(yvals, na.rm = T) - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
          lty = 2, lwd = 4, col = adjustcolor(1,0.75))
 
 #axes
-text(labels = "observed frequency", x = par("usr")[1] - diff(par("usr")[1:2])/7, srt = 90, pos = 1, 
+text(labels = "observed frequency", x = par("usr")[1] - diff(par("usr")[1:2])/ifelse2(use_focal_vs_compl, 8, 7), srt = 90, pos = 1, 
      y = par("usr")[4] - diff(par("usr")[3:4])/5, xpd = NA, cex = 1)
 text(labels = "expected frequency", x = par("usr")[1] + diff(par("usr")[1:2])/4, srt = 0, pos = 1, 
      y = par("usr")[4] + diff(par("usr")[3:4])/8, xpd = NA, cex = 1)
+xaxlocs <- ifelse2(use_focal_vs_compl, c(0:4/20), c(0:6/500))
+yaxlocs <- ifelse2(use_focal_vs_compl, c(0:6/20), c(0:6/500))
+
 segments(x0 = par("usr")[1], x1 = par("usr")[1] - diff(par("usr")[1:2])/100, 
-         y0 = ((0:6/500 - min(yvals)) / max(yvals)) * (yt - yb - 2*by) + yb + by, 
-         y1 = ((0:6/500 - min(yvals)) / max(yvals)) * (yt - yb - 2*by) + yb + by, 
+         y0 = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
+         y1 = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
          lwd = 4, xpd = NA)
 segments(y0 = par("usr")[4], y1 = par("usr")[4] + diff(par("usr")[3:4])/100, 
-         x0 = ((0:6/500 - min(xvals)) / max(xvals)) * (xr - xl - 2*bx) + xl + bx, 
-         x1 = ((0:6/500 - min(xvals)) / max(xvals)) * (xr - xl - 2*bx) + xl + bx, 
+         x0 = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+         x1 = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
          lwd = 4, xpd = NA)
-text(labels = 0:6/500, x = ((0:6/500 - min(xvals)) / max(xvals)) * (xr - xl - 2*bx) + xl + bx, 
+text(labels = xaxlocs, x = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
      srt = 0, pos = 3, 
      y = par("usr")[4], xpd = NA, cex = 0.75)
-text(labels = 0:6/500, x = par("usr")[1], 
+text(labels = yaxlocs, x = par("usr")[1], 
      srt = 0, pos = 2, 
-     y = ((0:6/500 - min(yvals)) / max(yvals)) * (yt - yb - 2*by) + yb + by, xpd = NA, cex = 0.75)
+     y = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, xpd = NA, cex = 0.75)
 # text(labels = 0:6/500, x = -7:-3*2, srt = 0, pos = 1, 
 #      y = par("usr")[3] - diff(par("usr")[3:4])/80, xpd = NA, cex = 1.25)
 abline(0,1, lty = 2, lwd = 6, col = adjustcolor(1,0.75))
@@ -2642,6 +2656,7 @@ text(x = par("usr")[1] + diff(par("usr")[1:2]) / 1.45,
 # plot(d$row_count / d$total * d$col_count / d$total, d$cell_count / d$total)
 
 dev.off()
+
 
 #### plot rowbias as a boxplot ####
 if(length(salient.categories) < 9){
@@ -2674,6 +2689,7 @@ overlaps_with_zero <- function(qi){qi[1,] < 0 & qi[2,] > 0}
 par(mar = c(5,4.5,2,2))
 tord <- order(apply(subset_samps("row_bias", c("raw", "sd"), samps = samps), 2, mean))
 qi_95 <- apply(subset_samps("row_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, quantile, probs = c(0.05, 0.95))[,tord]
+qi_100 <- apply(subset_samps("row_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, quantile, probs = c(0.0, 1.0))[,tord]
 posterior_means <- apply(subset_samps("row_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, mean)[tord]
 inside_cols <- rep("black", length(tord))
 inside_cols[overlaps_with_zero(qi_95)] <- "white"
@@ -2687,9 +2703,12 @@ axis(1, at = tick, labels = F)
 for(i in 1:length(tissues)){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 4, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19, cex = 1.5)
+  #guiding lines
+  segments(x0 = i, x1 = i, y0 = min(qi_100) - diff(range(qi_100)) / 30, y1 = qi_100[1,i], lwd = 1, col = "black", xpd = T, lty = 3)
+  segments(x0 = i, x1 = i, y0 = qi_100[2,i], y1 = max(qi_100) * 0.93 + 1 * 0.07, lwd = 1, col = "black", xpd = T, lty = 3)
 }
 text(tick + 0.2, par("usr")[3] - 0.05, tissues[tord], srt = 45, xpd = T, pos = 2)
-
+fig_label("a)", cex = 2, shrinkX = 0.4)
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 
 
@@ -2698,6 +2717,7 @@ abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 par(mar = c(7,5.5,2,2))
 tord <- order(apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps), 2, mean))
 qi_95 <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, quantile, probs = c(0.05, 0.95))[,tord]
+qi_100 <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, quantile, probs = c(0.0, 1.0))[,tord]
 posterior_means <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias, 2, mean)[tord]
 inside_cols <- rep("black", length(tord))
 inside_cols[overlaps_with_zero(qi_95)] <- "white"
@@ -2711,9 +2731,12 @@ axis(1, at = tick, labels = F)
 for(i in 1:length(trait_cats)){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 4, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19, cex = 1.5)
+  #guiding lines
+  segments(x0 = i, x1 = i, y0 = min(qi_100) - diff(range(qi_100)) / 30, y1 = qi_100[1,i], lwd = 1, col = "black", xpd = T, lty = 3)
+  segments(x0 = i, x1 = i, y0 = qi_100[2,i], y1 = max(qi_100) * 0.8 + 1 * 0.2, lwd = 1, col = "black", xpd = T, lty = 3)
 }
 text(tick + 0.35, par("usr")[3] - 0.1, trait_cats[tord], srt = 45, xpd = T, pos = 2, xpd = NA)
-
+fig_label("b)", cex = 2, shrinkX = 0.8)
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 
 
@@ -2723,6 +2746,7 @@ trait_subset_bool <- traitwise_partitions$Category[match(traits, traitwise_parti
 trait_subset_bool <- traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] %in% salient.categories
 tord <- order(apply(subset_samps("col_bias", c("raw", "sd"), samps = samps), 2, mean)[trait_subset_bool])
 qi_95 <- apply((subset_samps("col_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,trait_subset_bool], 2, quantile, probs = c(0.05, 0.95))[,tord]
+qi_100 <- apply((subset_samps("col_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,trait_subset_bool], 2, quantile, probs = c(0.00, 1.00))[,tord]
 posterior_means <- apply(subset_samps("col_bias", c("raw", "sd"), samps = samps)[,trait_subset_bool] + samps$overall_bias, 2, mean)[tord]
 inside_cols <- rep("black", length(tord))
 inside_cols[overlaps_with_zero(qi_95)] <- "white"
@@ -2738,10 +2762,13 @@ axis(1, at = tick, labels = F)
 for(i in 1:length(traits[trait_subset_bool])){
   segments(x0 = i, x1 = i, y0 = qi_95[1,i], y1 = qi_95[2,i], lwd = 2, col = inside_cols[i])
   points(x = i, y = posterior_means[i], col = inside_cols[i], pch = 19)
+  #guiding lines
+  segments(x0 = i, x1 = i, y0 = min(qi_100) - diff(range(qi_100)) / 30, y1 = qi_100[1,i], lwd = 1, col = "black", xpd = T, lty = 3)
+  segments(x0 = i, x1 = i, y0 = qi_100[2,i], y1 = max(qi_100) * 0.75 + 1 * 0.25, lwd = 1, col = "black", xpd = T, lty = 3)
 }
 text(tick + 0.55, par("usr")[3] - 0.125, cex = 0.7,
      trait_categories$new_Phenotype[match(traits[trait_subset_bool][tord], trait_categories$Tag)], srt = 45, xpd = T, pos = 2)
-
+fig_label("c)", cex = 2, shrinkX = 0.3)
 abline(h=0,lwd=3,lty=2, col = adjustcolor(1,0.5))
 
 dev.off()
@@ -6126,3 +6153,193 @@ for(tissue_abbrev in names(twas_intersect)){
   twas_intersect[[tissue_abbrev]] <- results
   
 }
+
+
+
+#### quick plot of exp vs obs freqs, incl prop pos hits ####
+use_focal_vs_compl <- T
+
+traits <- unique(data1$trait)
+tissues <- unique(data1$tissue)
+d <- list(cell_count = data1$count,
+          total = sapply(1:nrow(data1), function(i) total_number_of_possible_hits_matrix[data1$tissue[i], data1$trait[i]]),
+          row_count = sapply(1:nrow(data1), function(i) n_genes_in_nodes_matrix[data1$tissue[i], data1$trait[i]]),
+          col_count = sapply(1:nrow(data1), function(i) sig_twas_by_trait_genes_matrix[data1$tissue[i], data1$trait[i]]),
+          row_index = match(data1$tissue, tissues),
+          col_index = match(data1$trait, traits),
+          row_n = length(unique(data1$tissue)),
+          col_n = length(unique(data1$trait)))
+
+
+
+
+cairo_pdf(paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/pass1b_fig8_DEG-TWAS_logodds_double.pdf"), 
+          width = 1000 / 72 * 2, height = 925 / 72, family="Arial Unicode MS", pointsize = 36)
+
+category_shapes <- setNames(15:19, salient.categories)
+category_shapes <- setNames(15:19, c("Cardiometabolic", "Aging", "Anthropometric", 
+                                     "Immune", "Psychiatric-neurologic")
+)
+
+par(mar = c(5,4,3,4), mfrow = c(1,2))
+layout(t(c(rep(1,10), rep(2,10), 3)))
+layout(t(c(1,2,3)), widths = c(1,1,0.1))
+#first plot
+
+
+sapply(1:nrow(signif_df), function(i) adjustcolor(tissue_cols[tissues[d$row_index[i]]], as.numeric(signif_df$signif[i] != 0) * 0.625 + 0.125))
+if(use_focal_vs_compl){
+  xvals <- (d$col_count - d$cell_count) / (d$total - d$row_count)
+  yvals <- d$cell_count / d$row_count
+} else {
+  xvals <- d$row_count / d$total * d$col_count / d$total  
+  yvals <- d$cell_count / d$total
+}
+
+
+
+
+plot(logit(xvals), logit(yvals), xlim = ifelse2(use_focal_vs_compl, c(-14,-1), c(-15,-4.25)), 
+     ylim = ifelse2(use_focal_vs_compl, c(-6, -1), c(-9.5,-4.25)),
+     pch = category_shapes[traitwise_partitions$Category[match(traits[d$col_index], traitwise_partitions$Tag)]], 
+     col = adjustcolor(tissue_cols[tissues[d$row_index]], 0.5), 
+     cex = 1.5,
+     xlab = "", ylab = "", yaxt = 'n', xaxt = "n")
+box(which = "plot", lwd = 2)
+#axes
+text(labels = "observed logit(frequency)", x = par("usr")[2] + diff(par("usr")[1:2])/8, srt = 270, pos = 1, 
+     y = mean(par("usr")[3:4]), xpd = NA, cex = 1.25)
+text(labels = "expected logit(frequency)", x = mean(par("usr")[1:2]), srt = 0, pos = 1, 
+     y = par("usr")[3] - diff(par("usr")[3:4])/12, xpd = NA, cex = 1.25)
+yaxlocs <- ifelse2(use_focal_vs_compl, c(-6:-1), c(-5:-9))
+segments(x0 = par("usr")[2], x1 = par("usr")[2] + diff(par("usr")[1:2])/100, y0 = yaxlocs, y1 = yaxlocs, lwd = 4, xpd = NA)
+text(labels = yaxlocs, x = par("usr")[2] + diff(par("usr")[1:2])/200, srt = 0, pos = 4, 
+     y = yaxlocs, xpd = NA, cex = 1.25)
+xaxlocs <- ifelse2(use_focal_vs_compl, -7:-1*2, -7:-3*2)
+segments(x0 = xaxlocs, x1 = xaxlocs, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/80, lwd = 4, xpd = NA)
+text(labels = xaxlocs, x = xaxlocs, srt = 0, pos = 1, 
+     y = par("usr")[3] - diff(par("usr")[3:4])/80, xpd = NA, cex = 1.25)
+abline(0,1, lty = 2, lwd = 6, col = adjustcolor(1,0.75))
+
+#secondplot
+xl <- par("usr")[1]
+xr <- par("usr")[1] + diff(par("usr")[1:2]) / 2
+yt <- par("usr")[4]
+yb <- par("usr")[4] - diff(par("usr")[3:4]) / 2
+
+buffer <- 0.075
+bx <- (xr-xl) * buffer
+by <- (yt-yb) * buffer
+rect(xleft = xl, ybottom = yb, xright = xr, ytop = yt, lwd = 2, xpd = NA)
+
+points(x = ((xvals - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+       y = ((yvals - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
+       pch = category_shapes[traitwise_partitions$Category[match(traits[d$col_index], traitwise_partitions$Tag)]], 
+       col = adjustcolor(tissue_cols[tissues[d$row_index]], 0.5), 
+       cex = 1)
+segments(x0 = 0 * (xr - xl - 2*bx) + xl, 
+         y0 = 0 * (yt - yb - 2*by) + yb,
+         x1 = ((max(yvals, na.rm = T) - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+         y1 = ((max(yvals, na.rm = T) - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
+         lty = 2, lwd = 4, col = adjustcolor(1,0.75))
+
+#axes
+text(labels = "observed frequency", x = par("usr")[1] - diff(par("usr")[1:2])/ifelse2(use_focal_vs_compl, 8, 7), srt = 90, pos = 1, 
+     y = par("usr")[4] - diff(par("usr")[3:4])/5, xpd = NA, cex = 1)
+text(labels = "expected frequency", x = par("usr")[1] + diff(par("usr")[1:2])/4, srt = 0, pos = 1, 
+     y = par("usr")[4] + diff(par("usr")[3:4])/8, xpd = NA, cex = 1)
+xaxlocs <- ifelse2(use_focal_vs_compl, c(0:4/20), c(0:6/500))
+yaxlocs <- ifelse2(use_focal_vs_compl, c(0:6/20), c(0:6/500))
+
+segments(x0 = par("usr")[1], x1 = par("usr")[1] - diff(par("usr")[1:2])/100, 
+         y0 = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
+         y1 = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, 
+         lwd = 4, xpd = NA)
+segments(y0 = par("usr")[4], y1 = par("usr")[4] + diff(par("usr")[3:4])/100, 
+         x0 = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+         x1 = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+         lwd = 4, xpd = NA)
+text(labels = xaxlocs, x = ((xaxlocs - min(xvals, na.rm = T)) / max(xvals, na.rm = T)) * (xr - xl - 2*bx) + xl + bx, 
+     srt = 0, pos = 3, 
+     y = par("usr")[4], xpd = NA, cex = 0.75)
+text(labels = yaxlocs, x = par("usr")[1], 
+     srt = 0, pos = 2, 
+     y = ((yaxlocs - min(yvals, na.rm = T)) / max(yvals, na.rm = T)) * (yt - yb - 2*by) + yb + by, xpd = NA, cex = 0.75)
+# text(labels = 0:6/500, x = -7:-3*2, srt = 0, pos = 1, 
+#      y = par("usr")[3] - diff(par("usr")[3:4])/80, xpd = NA, cex = 1.25)
+abline(0,1, lty = 2, lwd = 6, col = adjustcolor(1,0.75))
+
+#legends
+legend(x = xl, y = yb, legend = names(category_shapes), pch = category_shapes, col = adjustcolor(1, 0.5), cex = 0.75, pt.cex = 1.4)
+legend(x = xr, y = yt, legend = tissues, pch = 19, col = adjustcolor(tissue_cols[tissues], 0.5), cex = 0.55, pt.cex = 1.2)
+segments(x0 = par("usr")[1] + diff(par("usr")[1:2]) / 1.55, 
+         y0 = par("usr")[4] - diff(par("usr")[3:4])/50,
+         x1 = par("usr")[1] + diff(par("usr")[1:2]) / 1.45, 
+         y1 = par("usr")[4] - diff(par("usr")[3:4])/50, 
+         lty = 2, lwd = 4, col = adjustcolor(1,0.75))
+text(x = par("usr")[1] + diff(par("usr")[1:2]) / 1.45, 
+     y = par("usr")[4] - diff(par("usr")[3:4])/45, 
+     pos = 4, cex = 0.75, labels = "1-to-1 line")
+fig_label("a)", shrinkX = 0.975, cex = 2, shrinkY = 2)
+
+#make second plot with raw proportion data
+xvals <- data$count_all / data$total_all
+yvals <- data$count_inters / data$total_inters
+
+
+cex_pow <- 1/2
+plot(xvals, yvals, xlim = c(0.48, 0.52), 
+     ylim = c(0,1),
+     pch = category_shapes[traitwise_partitions$Category[match(data$trait, traitwise_partitions$Tag)]], 
+     col = adjustcolor(tissue_cols[data$tissue], 0.5), 
+     cex = (data$total_inters / max(data$total_inters))^cex_pow * 5,
+     xlab = "", ylab = "", yaxt = 'n', xaxt = "n")
+box(which = "plot", lwd = 2)
+#axes
+text(labels = "observed frequency (+ effects)", x = par("usr")[1] - diff(par("usr")[1:2])/7, srt = 90, pos = 1, 
+     y = mean(par("usr")[3:4]), xpd = NA, cex = 1.25)
+text(labels = "expected frequency (+ effects)", x = mean(par("usr")[1:2]), srt = 0, pos = 1, 
+     y = par("usr")[3] - diff(par("usr")[3:4])/12, xpd = NA, cex = 1.25)
+yaxlocs <- seq(0,1,by=0.1)
+segments(x0 = par("usr")[1], x1 = par("usr")[1] - diff(par("usr")[1:2])/100, y0 = yaxlocs, y1 = yaxlocs, lwd = 4, xpd = NA)
+text(labels = yaxlocs, x = par("usr")[1] - diff(par("usr")[1:2])/200, srt = 0, pos = 2, 
+     y = yaxlocs, xpd = NA, cex = 1.25)
+xaxlocs <- round(seq(par("usr")[1], par("usr")[2], by = 0.01), 2)
+segments(x0 = xaxlocs, x1 = xaxlocs, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/80, lwd = 4, xpd = NA)
+text(labels = xaxlocs, x = xaxlocs, srt = 0, pos = 1, 
+     y = par("usr")[3] - diff(par("usr")[3:4])/80, xpd = NA, cex = 1.25)
+# abline(0,1, lty = 2, lwd = 6, col = adjustcolor(1,0.75))
+abline(h=0.5,lwd=4,lty=2,col=adjustcolor(1,0.5))
+abline(v=0.5,lwd=4,lty=2,col=adjustcolor(1,0.5))
+
+#legened
+xl <- par("usr")[2]
+xr <- par("usr")[2] + diff(par("usr")[1:2]) / 2
+yt <- par("usr")[4]
+yb <- par("usr")[4] - diff(par("usr")[3:4]) / 2.75
+legend(x = xl, y = yb, legend = names(category_shapes), bty = "n",
+       pch = category_shapes, col = adjustcolor(1, 0.5), cex = 0.75, pt.cex = 1.4, xpd = NA)
+legend(x = xl + (xr-xl)/100, y = yt, legend = tissues, pch = 19, bty = "n", xpd = NA,
+       col = adjustcolor(tissue_cols[tissues], 0.5), cex = 0.55, pt.cex = 1.2)
+
+
+legcexs <- c(0.5, 1:5)
+legvals <- (round((legcexs / 5) ^ (1/cex_pow) * max(data$total_inters)))
+legcexs <- (legvals / max(data$total_inters))^cex_pow * 5
+# points(x = rep(xl + (xr-xl)/11, 6) + (rev(legcexs)) / 4000, y = yb - (yt-yb) * 1.4 + 
+#          cumsum(rep((yt-yb)/60, length(legcexs))) + cumsum(legcexs + c(0,legcexs[-length(legcexs)])) / 120, 
+#        cex = legcexs, xpd = NA, pch = 19, col = adjustcolor(1, 0.5))
+text(labels = latex2exp::TeX("$n_{intersect}$"), x = xl - (xr-xl)/50, y = yb - (yt-yb) * 0.6, pos = 4, xpd = NA)
+points(x = rep(xl + (xr-xl)/11, 6), y = yb - (yt-yb) * 1.4 + 
+         cumsum(rep((yt-yb)/60, length(legcexs))) + cumsum(legcexs + c(0,legcexs[-length(legcexs)])) / 120, 
+       cex = legcexs, xpd = NA, pch = 19, col = adjustcolor(1, 0.5))
+text(x = rep(xl + (xr-xl)/11, 6), y = yb - (yt-yb) * 1.4 + 
+         cumsum(rep((yt-yb)/60, length(legcexs))) + cumsum(legcexs + c(0,legcexs[-length(legcexs)])) / 120, 
+       cex = legcexs / 5, xpd = NA, labels = legvals, col = "white")
+text(labels = legvals[1:2], x = xl + (xr-xl)/15 + cumsum(legcexs)[1:2]/4000, y = yb - (yt-yb) * 1.4 + 
+       cumsum(rep((yt-yb)/60, length(legcexs)))[1:2] + cumsum(legcexs + c(0,legcexs[-length(legcexs)]))[1:2] / 120, 
+     pos = 4, xpd = NA, cex = 0.5)
+
+
+fig_label("b)", shrinkX = 1, cex = 2)
+dev.off()

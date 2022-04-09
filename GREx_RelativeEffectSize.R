@@ -371,6 +371,7 @@ for(tissue in tissues){
   #             2 * gcta_output[[tissue]]$SE[match(deg_eqtl_list[[tissue]]$human_ensembl_gene.x, gcta_output[[tissue]]$ENSG)]))
 }
 save(deg_eqtl_list, file = "~/data/smontgom/relative_effect_sizes_deg_eqtl_list.RData")
+load("~/data/smontgom/relative_effect_sizes_deg_eqtl_list.RData")
 
 #remove unexpressed genes
 # where either "reference_average_intensity" or "comparison_timewise_intensity" in the timewise-dea tables is 0
@@ -483,15 +484,15 @@ grDevices::cairo_pdf(filename = paste0("~/Documents/Documents - nikolai/motrpac_
 
 #layout matrix
 layout(rbind(
-  c(11,8,1,1,1,9,10,10,4,4,4,11,6,6,6,11),
-  c(11,8,1,1,1,9,10,10,4,4,4,11,6,6,6,11),
-  c(11,2,2,11,3,3,10,10,5,5,5,11,7,7,7,11),
-  c(11,2,2,11,3,3,10,10,5,5,5,11,7,7,7,11)
+  c(11,8,1,1,1,9,10,10,4,4,4,11,6,6,6),
+  c(11,8,1,1,1,9,10,10,4,4,4,11,6,6,6),
+  c(11,2,2,11,3,3,10,10,5,5,5,11,7,7,7),
+  c(11,2,2,11,3,3,10,10,5,5,5,11,7,7,7)
 ))
 
 
 
-par(mar = c(4,1.5,2,1.5))
+par(mar = c(4,2,2,2)+0.5)
 #logFCs
 xr <- c(-2,2)
 x_logfc <- seq(from = xr[1], to = xr[2], length.out = 256)
@@ -513,16 +514,16 @@ for(tissue in colnames(logfc_dens)){
 #surrounding text
 # text(x = -6, y = -6.5, labels = "(", cex = 16, xpd = NA, family = "Helvetica Narrow", srt = 0, col = 1)
 par(xpd = NA)
-arc(t1 = pi/2, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(-5.25, -6.5), adjx = 0.25, lwd = 3)
-arc(t1 = pi/2-1E-5, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(4.75, -6.5), adjx = 0.25, lwd = 3)
-text(x = 5.5, -3.5, labels = "1/2", cex = 2)
-segments(x0 = -5.5, x1 = 5, y0 = -2.5, y1 = -2.5, lwd = 5, xpd = NA)
+arc(t1 = pi/2, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(-5.8, -7), adjx = 0.25, lwd = 3)
+arc(t1 = pi/2-1E-5, t2 = 3*pi/2, r1 = 3, r2 = 3, center = c(5.3, -7), adjx = 0.25, lwd = 3)
+text(x = 6, -3.75, labels = "1/2", cex = 2)
+segments(x0 = -5.5, x1 = 5, y0 = -2.75, y1 = -2.75, lwd = 5, xpd = NA)
 segments(x0 = 6, x1 = 7, y0 = -2.5, y1 = -2.5, lwd = 10, xpd = NA, col = 2)
 points(7.25, -2.5, pch = -9658, cex = 5, xpd = NA, col = 2)
 par(xpd = T)
 
 #snp heritability
-par(mar = c(4,0,2,0))
+par(mar = c(5,0,2,0))
 if(!exists("gcta_output")){
   load(file = "gcta_output_GTEx_allTissues_list_IHW.RData")
   load(paste0(gcta_directory, "gcta_output_GTEx_allTissues.RData"))
@@ -636,21 +637,25 @@ for(type in 3:4){
 }
 
 
-#histograms
+
+dev.off()
+
+
+#### histograms ####
 # tissues <- colnames(relative_expression_data[["male"]][[3]][["8w"]])
 # xr <- c(-4, 4)
 # x_gen <- seq(from = xr[1], to = xr[2], length.out = 256)
-# gen_dens <- lapply(setNames(c("male", "female"),c("male", "female")), function(sex_i) 
+# gen_dens <- lapply(setNames(c("male", "female"),c("male", "female")), function(sex_i)
 #   sapply(setNames(tissues, tissues), function(tissue){
-#     dens_input <- deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == "8w" & 
-#                                                                 deg_eqtl_list[[tissue]]$sex == sex_i]
+#     dens_input <- deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == "8w" &
+#                                                                  deg_eqtl_list[[tissue]]$sex == sex_i]
 #     density(dens_input, na.rm = T, from = xr[1], to = xr[2], n = 256)$y
 #   }
-# ))
+#   ))
 # 
-# lapply(setNames(c("male", "female"),c("male", "female")), function(sex_i) 
+# lapply(setNames(c("male", "female"),c("male", "female")), function(sex_i)
 #   sapply(setNames(tissues, tissues), function(tissue){
-#     dens_input <- deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == "8w" & 
+#     dens_input <- deg_eqtl_list[[tissue]]$genetic_expression_Z[deg_eqtl_list[[tissue]]$comparison_group == "8w" &
 #                                                                  deg_eqtl_list[[tissue]]$sex == sex_i]
 #     quantile(dens_input, na.rm = T)
 #   }
@@ -667,9 +672,64 @@ for(type in 3:4){
 #   text(x = mean(par("usr")[1:2]), y = par("usr")[3] - diff(par("usr")[3:4])/4.5, labels = latex2exp::TeX("Standardized Effect Size (SD)"), srt = 0, xpd = NA)
 #   
 #   for(tissue in colnames(gen_dens[[sex]])){
-#     polygon(c(x_gen, rev(x_gen)), c(gen_dens[[sex]][,tissue], rep(0,length(x_gen))), col = adjustcolor(cols$Tissue[tissue], 0.5))  
+#     polygon(c(x_gen, rev(x_gen)), c(gen_dens[[sex]][,tissue], rep(0,length(x_gen))), col = adjustcolor(cols$Tissue[tissue], 0.5))
 #   }
 # }
 
-dev.off()
-
+# deg_eqtl_list$`t56-vastus-lateralis`$phenotypic_expression_Z
+# hist(asinh(asinh(deg_eqtl_list$`t56-vastus-lateralis`$genetic_expression_Z)))
+# 
+# #figure out height of histogram
+# histogram_range_rescaler <- 1.4 * max(1, max(hist_corrs_prots.trans$counts[1:5]) /  max(hist_corrs_prots.trans$counts) * 2)
+# range_hist_corrs_prots.trans <- c(0,max(hist_corrs_prots.trans$counts)) * histogram_range_rescaler
+# range_hist_corrs_trans_logFC.zscores <- c(0,max(hist_corrs_trans_logFC.zscores$counts)) * histogram_range_rescaler
+# 
+# 
+# #plot histogram blocks
+# for(bin in 1:(length(hist_corrs_prots.trans$breaks) - 1)){
+#   rect(xleft = (hist_corrs_prots.trans$breaks[bin] + 1)*(1-buffer_hist)+buffer_hist,
+#        xright = (hist_corrs_prots.trans$breaks[bin+1] + 1)*(1-buffer_hist)+buffer_hist,
+#        # ybottom = (-lower_hist_bin_by/range_hist_corrs_prots.trans[2])*(1-buffer_hist)+buffer_hist/2,
+#        ybottom = 0,
+#        ytop = (hist_corrs_prots.trans$counts[bin] / range_hist_corrs_prots.trans[2])*(1-buffer_hist)+buffer_hist/2,
+#        col = adjustcolor(ome_cols[5], 0.75),
+#        border = NA
+#   )
+# }
+# 
+# for(gbi in 1:length(genes_in_bins)){
+#   
+#   #write number of genes of each sex above rectangle
+#   n_male <- length(grep(pattern = "\u2642", genes_in_bins[[gbi]]))
+#   n_female <- length(grep(pattern = "\u2640", genes_in_bins[[gbi]]))
+#   sex_summary_text <- paste0(n_male, "\u2642,", n_female, "\u2640")
+#   sex_summary_text_cols <- c(rep(1,nchar(n_male)), cols$Sex["male"], rep(1,nchar(n_female)+1), cols$Sex["female"])
+#   text_cols(string = sex_summary_text, pos = 3, cex = 0.75, cols = sex_summary_text_cols,
+#             x = (hist_corrs_prots.trans$mids[gbi] + 1)*(1-buffer_hist)+buffer_hist, 
+#             y = (hist_corrs_prots.trans$counts[gbi] / range_hist_corrs_prots.trans[2])*(1-buffer_hist)+buffer_hist/2 - 0.05)
+#   
+#   if(length(genes_in_bins[[gbi]]) == 0){
+#     next()
+#   }
+# 
+#   txt <- genes_in_bins[[gbi]]
+# 
+#   #truncate long gene names
+#   max_gene_name_length <- 10
+#   short_txt <- sapply(txt, function(stxt) strsplit(stxt, "-")[[1]][-length(strsplit(stxt, "-")[[1]])])
+#   short_txt <- sapply(short_txt, function(stxt) paste0(substr(stxt, 1, max_gene_name_length), ifelse(nchar(stxt) > max_gene_name_length, ".", "")))
+#   txt <- sapply(1:length(txt), function(txti) paste0(short_txt[txti], "-", strsplit(txt[txti], "-")[[1]][length(strsplit(txt[txti], "-")[[1]])]))
+#   
+#   rect_coords <- list(x0 = (hist_corrs_prots.trans$breaks[gbi] + 1)*(1-buffer_hist)+buffer_hist,
+#                       x1 = (hist_corrs_prots.trans$breaks[gbi+1] + 1)*(1-buffer_hist)+buffer_hist,
+#                       y0 = (hist_corrs_prots.trans$counts[gbi] / range_hist_corrs_prots.trans[2])*(1-buffer_hist)+buffer_hist/2 - 0.01,
+#                       y1 = 0*(1-buffer_hist)+buffer_hist/2)
+#   optimal_word_placement_inf <- find_optimal_cex_and_lines(txt = txt, rect_coords = rect_coords, rect_rescaling_ratio = 0.925)
+#   #1 is male, 2 female, 3 both
+#   txt_sexes <- as.numeric(nchar(txt) - nchar(sapply(txt, function(stxt) strsplit(stxt, "-")[[1]][1])) == 3) + 2
+#   txt_sexes[txt_sexes == 2] <- as.numeric(sapply(txt, function(stxt) strsplit(stxt, "-")[[1]][2])[txt_sexes == 2] == "\u2640" ) + 1
+#   sex_cols_map <- list(male = cols$Sex[c("male")], female = cols$Sex[c("female")], both = cols$Sex[c("male", "female")])
+#   cols_list <- lapply(1:length(txt), function(word_i) as.vector(c(rep(0, nchar(txt[word_i]) - 1 - floor(txt_sexes[word_i]/3)), unlist(sex_cols_map[txt_sexes[word_i]]))))
+#   text_wrapped_words(txt, rect_coords, optimal_word_placement_inf, justified = T, col = "white", str_width_lefter_start_ratio = 0.15, rect_rescaling_ratio = 0.925,
+#                      cols_list = cols_list, multicolor_words = T)
+# }

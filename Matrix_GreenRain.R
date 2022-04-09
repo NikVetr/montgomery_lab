@@ -35,10 +35,10 @@ addImg <- function(
 }
 
 #define window size
-nchar_vert <- 25
+nchar_vert <- 30 #originally 25
 pwidth <- 3840
 pwidth_in <- pwidth / 72
-pheight <- 1080
+pheight <- 2160
 pheight_in <- pheight / 72
 
 #define background string behavior
@@ -54,6 +54,7 @@ prob_glitch <- 0.02
 
 #FINAL WORD
 fword <- "THE MONTGOMERY LAB"
+fword <- "THE EXTRACELLULAR MATRIX"
 fword_letters <- unique(strsplit(fword, "")[[1]])
 
 #figure out string properties
@@ -106,6 +107,15 @@ name_topletter_rows <- sapply(nc_members, function(minbotrow) sample(1:(nchar_ve
 for(ni in 1:length(members)){
   nucs_matrix[name_topletter_rows[ni]:(name_topletter_rows[ni] + nc_members[ni] - 1), name_columns[ni]] <- rev(strsplit(members[ni], "")[[1]])
 }
+
+#change to arbitrary 
+
+codeword <- "XENOTRANSPLANTATION "
+codeword <- paste0(rev(strsplit(codeword, "")[[1]]), collapse = "")
+nucs_matrix <- matrix(rep(strsplit(codeword, "")[[1]], 
+               times = ceiling(nrow(nucs_matrix) * ncol(nucs_matrix) / nchar(codeword)))[1:(nrow(nucs_matrix) * ncol(nucs_matrix))], 
+               nrow = nrow(nucs_matrix), ncol = ncol(nucs_matrix))  
+      
 
 # AAs <- sample(length_poss, size = n_seqs, replace = T)
 # AAs <- sapply(AAs, function(nAA) c("ATG", sample(triplets, size = nAA, replace = T), sample(stop_codons, 1)))
@@ -238,6 +248,8 @@ h_grid_alphas <- t(replicate(n = ceiling(nf / (screen_flicker_duration_in_sec * 
 
 #stephen's face
 face <- png::readPNG("~/data/smontgom/matrix_stephen.png")
+face <- png::readPNG("~/data/kate_matrix.png")
+face <- png::readPNG("~/data/pig_matrix.png")
 
 ## now work backwards to make the 2nd wave of strings hit when the fword letters appear ##
 fword_inds <- fword_xloc:(fword_xloc+ncfw-1)
@@ -358,7 +370,8 @@ foreach(f1=seq(1, nf, framethin), .packages = c("png")) %dopar% {
   if(f1 <= sum(hide_stephen)){
   face_to_plot <- face
   face_to_plot[,,4] <- face_to_plot[,,4] * (1-min(1,max(0,(f1-hide_stephen[1]) / hide_stephen[2]))) * min(1,max(0,(f1-show_stephen[1]) / show_stephen[2]))
-  addImg(face_to_plot, x = (n_horiz_strings) / 1.75, y = 11, width = 50)
+  # addImg(face_to_plot, x = (n_horiz_strings) / 1.75, y = 11, width = 50)
+  addImg(face_to_plot, x = (n_horiz_strings) / 1.9, y = 12, width = 45)
   }
   
   dev.off() 

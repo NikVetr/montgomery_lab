@@ -4,7 +4,10 @@ library(EnsDb.Hsapiens.v79)
 
 #read in rat-human mapping
 rgd_orthologs <- fread("~/data/smontgom/RGD_ORTHOLOGS_20201001.txt", header = T, sep = "\t")
-feature_to_gene_map <- fread("~/data/smontgom/motrpac-mappings-master_feature_to_gene.txt", header = T, sep = "\t", fill = T)
+gencode_gene_map <- rdg_mapping <- fread("~/data/smontgom/gencode.v39.RGD.20201001.human.rat.gene.ids.txt")
+gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID <- gsub(gencode_gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID, pattern = "\\..*", replacement = "")
+gene_map <- gencode_gene_map
+# feature_to_gene_map <- fread("~/data/smontgom/motrpac-mappings-master_feature_to_gene.txt", header = T, sep = "\t", fill = T)
 
 motrpac_gtex_map = c('t30-blood-rna'='Whole_Blood',
                      't52-hippocampus'='Brain_Hippocampus',
@@ -33,12 +36,11 @@ sex_DE_humans <- lapply(setNames(setdiff(motrpac_gtex_map, c("Testis", "Ovary"))
 for(tissue in names(sex_DE_humans)){
   print(tissue)
   sex_DE_humans[[tissue]] <- sexbg[sexbg$tissue == tissue,c("ENSG","effsize","lfsr")]
-  map <- ensembldb::select(EnsDb.Hsapiens.v79, 
-                           keys = sex_DE_humans[[tissue]]$ENSG, 
-                           keytype = "GENEID", columns = c("GENEID", "SYMBOL"))
-  sex_DE_humans[[tissue]]$HUMAN_ORTHOLOG_SYMBOL <- map$SYMBOL[match(sex_DE_humans[[tissue]]$ENSG, map$GENEID)]
-    
-    
+  # map <- ensembldb::select(EnsDb.Hsapiens.v79, 
+  #                          keys = sex_DE_humans[[tissue]]$ENSG, 
+  #                          keytype = "GENEID", columns = c("GENEID", "SYMBOL"))
+  # sex_DE_humans[[tissue]]$HUMAN_ORTHOLOG_SYMBOL <- map$SYMBOL[match(sex_DE_humans[[tissue]]$ENSG, map$GENEID)]
+  sex_DE_humans[[tissue]]$HUMAN_ORTHOLOG_SYMBOL <- gene_map$HUMAN_ORTHOLOG_SYMBOL[match(sex_DE_humans[[tissue]]$ENSG, gene_map$HUMAN_ORTHOLOG_ENSEMBL_ID)]
 }
 names(sex_DE_humans) <- names(motrpac_gtex_map)[match(names(sex_DE_humans), motrpac_gtex_map)]
 sex_DE_humans[[length(sex_DE_humans) + 1]] <- sex_DE_humans$`t55-gastrocnemius`
@@ -70,6 +72,13 @@ for(tissue in setdiff(names(motrpac_gtex_map), c("t63-testes", "t64-ovaries"))){
 n_entries <- sapply(names(sex_DE_rats), function(tissue) nrow(sex_DE_rats[[tissue]]))
 n_comparisons <- sum(n_entries)
 fdr_pvals <- p.adjust(unlist(sapply(names(sex_DE_rats), function(tissue) sex_DE_rats[[tissue]]$p_value)), "fdr")
+
+ihw_results <- IHW::ihw(pval ~ tissue,
+                        data = data.frame(pval = unlist(sapply(names(sex_DE_rats), function(tissue) sex_DE_rats[[tissue]]$p_value)),
+                                          tissue = factor(unlist(sapply(names(sex_DE_rats), function(tissue) rep(tissue, length(sex_DE_rats[[tissue]]$p_value)))))),
+                        alpha = 0.05)
+fdr_pvals <- ihw_results@df$adj_pvalue
+
 alpha = 0.05
 for(tissue in names(sex_DE_rats)){
   print(tissue)
@@ -85,6 +94,7 @@ for(tissue in names(sex_DE_rats)){
   sex_DE_rats[[tissue]] <- sex_DE_rats[[tissue]][sex_DE_rats[[tissue]]$fdr_significant,]
 }
 sapply(names(sex_DE_rats), function(tissue) sum(sex_DE_rats[[tissue]]$bonferroni_significant))
+sapply(names(sex_DE_rats), function(tissue) sum(sex_DE_rats[[tissue]]$fdr_significant))
 
 #### do plotting ####
 
@@ -218,12 +228,14 @@ out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3, data = d, 
 summ <- out$summary()
 summ[order(summ$ess_bulk),]
 samps <- data.frame(as_draws_df(out$draws()))
-prop_same_dir_hier <- rbind(mean = apply(samps[,grep("prob_same_direction", colnames(samps))], 2, mean),
-                              apply(samps[,grep("prob_same_direction", colnames(samps))], 2, quantile, 
+relev_samps <- samps[,grep("prob_same_direction", colnames(samps))]
+prop_same_dir_hier <- rbind(mean = apply(relev_samps, 2, mean),
+                                   apply(relev_samps, 2, quantile, 
                                     p = c((1-prop_interval)/2, 1-(1-prop_interval)/2)))
 colnames(prop_same_dir_flatbeta) <- bic_animal_tissue_code$abbreviation[match(colnames(prop_same_dir_flatbeta), 
                                                                               bic_animal_tissue_code$tissue_name_release)]
-colnames(prop_same_dir_hier) <- colnames(prop_same_dir_flatbeta)
+colnames(prop_same_dir_hier) <- colnames(relev_samps) <- colnames(prop_same_dir_flatbeta)
+write.table(relev_samps, "~/data/smontgom/ratman_sex_comparison_samps.txt")
 
 # prop_same_dir <- prop_same_dir_flatbeta
 prop_same_dir <- prop_same_dir_hier
