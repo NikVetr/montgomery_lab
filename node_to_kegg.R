@@ -3,24 +3,19 @@ library(KEGGREST)
 library(org.Hs.eg.db)
 library(limma)
 
-# kegg_info <- keggGet(c("hsa:2947"))
-# str(kegg_info)
-# kegg_info[[1]]$PATHWAY
-# p = keggLink("hsa", "pathway")
-# map = split(names(p), unname(p))  # gene -> pathway map
-# map[["hsa:574537"]]
-
 load("~/data/smontgom/node_metadata_list.RData")
 ensembl_genes <- node_metadata_list$`8w`$human_ensembl_gene
+ensembl_genes <- ensembl_genes[!is.na(ensembl_genes)]
 
 tab <- getGeneKEGGLinks(species="hsa")
 tab$ENSEMBL <- mapIds(org.Hs.eg.db, tab$GeneID, column="ENSEMBL", keytype="ENTREZID")
 tab$SYMBOL <- mapIds(org.Hs.eg.db, tab$GeneID, column="SYMBOL", keytype="ENTREZID")
 
-# length(unique(tab$ENSEMBL))
-# length(map)
-
 ensembl_to_pathway <- lapply(setNames(ensembl_genes, ensembl_genes), function(eg) tab$PathwayID[which(eg == tab$ENSEMBL)])
+library(gprofiler2)
+gp2out <- gost(ensembl_genes, significant = F, sources = "KEGG")
+str(gp2out)
+gp2out$result
 
 km <- c(read.csv("~/data/kegg_pathways.csv", header = F))[[1]]
 l1is <- c(grep("\\. ", km), length(km) + 1)

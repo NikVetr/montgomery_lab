@@ -1690,246 +1690,246 @@ abline(0,1, lty = 2, col = adjustcolor(1,0.5), lwd = 2)
 # }
 # '
 
-traits <- unique(data1$trait)
-tissues <- unique(data1$tissue)
-d <- list(cell_count = data1$count,
-          total = sapply(1:nrow(data1), function(i) total_number_of_possible_hits_matrix[data1$tissue[i], data1$trait[i]]),
-          row_count = sapply(1:nrow(data1), function(i) n_genes_in_nodes_matrix[data1$tissue[i], data1$trait[i]]),
-          col_count = sapply(1:nrow(data1), function(i) sig_twas_by_trait_genes_matrix[data1$tissue[i], data1$trait[i]]),
-          row_index = match(data1$tissue, tissues),
-          col_index = match(data1$trait, traits),
-          row_n = length(unique(data1$tissue)),
-          col_n = length(unique(data1$trait)))
-
-stan_program <- '
-data {
-    int<lower=1> row_n;
-    int<lower=1> col_n;
-    int<lower=0> total[row_n * col_n];
-    int<lower=1,upper=row_n> row_index[row_n * col_n];
-    int<lower=1,upper=col_n> col_index[row_n * col_n];
-    int<lower=0> row_count[row_n * col_n];
-    int<lower=0> col_count[row_n * col_n];
-    int<lower=0> cell_count[row_n * col_n];
-}
-transformed data {
-    int<lower=1> n = row_n * col_n;
-    int<lower=0,upper=1> smaller_margin[n]; //0 if row, 1 if col
-    int<lower=0> marginal_total[n];
-    for(i in 1:n){
-      //smaller_margin[i] = 1;
-      smaller_margin[i] = row_count[i] > col_count[i];
-      marginal_total[i] = smaller_margin[i] * col_count[i] + (1-smaller_margin[i]) * row_count[i];
-    }
-    vector[n] smaller_margin_vec = to_vector(smaller_margin);
-}
-parameters {
-    //main parameters
-    real col_mean;
-    real<lower=0> col_sd;
-    vector[col_n] raw_col_logodds;
-    real<lower=0> col_indiv_sd;
-    vector[n] raw_col_indiv_logodds;
-
-    real row_mean;
-    real<lower=0> row_sd;
-    vector[row_n] raw_row_logodds;
-    real<lower=0> row_indiv_sd;
-    vector[n] raw_row_indiv_logodds;
-    
-    vector[n] raw_cell_logodds;
-    real<lower=0> cell_sd;
-    
-    //biases in deviations terms
-    real overall_bias;
-    vector[row_n] raw_row_bias;
-    vector[col_n] raw_col_bias;
-    real<lower=0> row_bias_sd;
-    real<lower=0> col_bias_sd;
-}
-transformed parameters {
-    //recenter params
-    vector[col_n] col_logodds = raw_col_logodds * col_sd + col_mean;
-    vector[n] col_indiv_logodds = raw_col_indiv_logodds * col_indiv_sd + col_logodds[col_index];
-    vector[row_n] row_logodds = raw_row_logodds * row_sd + row_mean;
-    vector[n] row_indiv_logodds = raw_row_indiv_logodds * row_indiv_sd + row_logodds[row_index];
-    vector[n] cell_mean = smaller_margin_vec .* row_indiv_logodds + (1-smaller_margin_vec) .* col_indiv_logodds;
-    vector[n] cell_logodds = raw_cell_logodds * cell_sd + cell_mean + 
-                             overall_bias +
-                             raw_row_bias[row_index] * row_bias_sd + 
-                             raw_col_bias[col_index] * col_bias_sd;
-}
-model {
-    //priors and hyperpriors
-    
-    //marginal params
-    raw_col_logodds ~ std_normal();
-    raw_col_indiv_logodds ~ std_normal();
-    col_mean ~ normal(0,2);
-    col_sd ~ std_normal();
-    col_indiv_sd ~ std_normal();
-    
-    raw_row_logodds ~ std_normal();
-    raw_row_indiv_logodds ~ std_normal();
-    row_mean ~ normal(0,2);
-    row_sd ~ std_normal();
-    row_indiv_sd ~ std_normal();
-    
-    //bias params
-    overall_bias ~ std_normal();
-    raw_row_bias ~ std_normal();
-    raw_col_bias ~ std_normal();
-    row_bias_sd ~ std_normal();
-    col_bias_sd ~ std_normal();
-    
-    //cell params
-    raw_cell_logodds ~ std_normal();
-    cell_sd ~ std_normal();
-    
-    //likelihood
-    col_count ~ binomial_logit(total, col_indiv_logodds);
-    row_count ~ binomial_logit(total, row_indiv_logodds);
-    cell_count ~ binomial_logit(marginal_total, cell_logodds);
-}
-generated quantities {
-    vector[n] cell_bias = cell_logodds - (cell_mean + overall_bias +
-                             raw_row_bias[row_index] * row_bias_sd + 
-                             raw_col_bias[col_index] * col_bias_sd);
-    vector[n] cell_total_prob_bias = inv_logit(cell_logodds) - inv_logit(cell_mean);
-    vector[n] cell_total_prob_bias_logodds = cell_logodds - cell_mean;
-    vector[row_n] row_bias = raw_row_bias * row_bias_sd;
-    vector[col_n] col_bias = raw_col_bias * col_bias_sd;
-}
-'
-
-#incorporate a category term
-traits <- unique(data1$trait)
-tissues <- unique(data1$tissue)
-trait_cats <- salient.categories
-d <- list(cell_count = data1$count,
-          total = sapply(1:nrow(data1), function(i) total_number_of_possible_hits_matrix[data1$tissue[i], data1$trait[i]]),
-          row_count = sapply(1:nrow(data1), function(i) n_genes_in_nodes_matrix[data1$tissue[i], data1$trait[i]]),
-          col_count = sapply(1:nrow(data1), function(i) sig_twas_by_trait_genes_matrix[data1$tissue[i], data1$trait[i]]),
-          row_index = match(data1$tissue, tissues),
-          col_index = match(data1$trait, traits),
-          colcat_index = match(traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] , trait_cats),
-          row_n = length(tissues),
-          col_n = length(traits),
-          colcat_n = length(trait_cats))
-
-stan_program <- '
-data {
-    int<lower=1> row_n;
-    int<lower=1> col_n;
-    int<lower=1> colcat_n;
-    int<lower=0> total[row_n * col_n];
-    int<lower=1,upper=row_n> row_index[row_n * col_n];
-    int<lower=1,upper=col_n> col_index[row_n * col_n];
-    int<lower=1,upper=colcat_n> colcat_index[col_n];
-    int<lower=0> row_count[row_n * col_n];
-    int<lower=0> col_count[row_n * col_n];
-    int<lower=0> cell_count[row_n * col_n];
-}
-transformed data {
-    int<lower=1> n = row_n * col_n;
-    int<lower=0,upper=1> smaller_margin[n]; //0 if row, 1 if col
-    int<lower=0> marginal_total[n];
-    for(i in 1:n){
-      //smaller_margin[i] = 1;
-      smaller_margin[i] = row_count[i] > col_count[i];
-      marginal_total[i] = smaller_margin[i] * col_count[i] + (1-smaller_margin[i]) * row_count[i];
-    }
-    vector[n] smaller_margin_vec = to_vector(smaller_margin);
-}
-parameters {
-    //col params
-    real col_mean;
-    real<lower=0> col_sd;
-    vector[colcat_n] raw_colcat_logodds;
-    real<lower=0> colcat_sd;
-    vector[col_n] raw_col_logodds;
-    real<lower=0> col_indiv_sd;
-    vector[n] raw_col_indiv_logodds;
-    
-    //row params
-    real row_mean;
-    real<lower=0> row_sd;
-    vector[row_n] raw_row_logodds;
-    real<lower=0> row_indiv_sd;
-    vector[n] raw_row_indiv_logodds;
-    
-    //cell params
-    vector[n] raw_cell_logodds;
-    real<lower=0> cell_sd;
-    
-    //biases in deviations terms
-    real overall_bias;
-    vector[row_n] raw_row_bias;
-    vector[col_n] raw_col_bias;
-    vector[colcat_n] raw_colcat_bias;
-    real<lower=0> row_bias_sd;
-    real<lower=0> col_bias_sd;
-    real<lower=0> colcat_bias_sd;
-}
-transformed parameters {
-    //recenter params
-    
-    vector[colcat_n] colcat_logodds = raw_colcat_logodds * col_sd + col_mean;
-    vector[col_n] col_logodds = raw_col_logodds * colcat_sd + colcat_logodds[colcat_index];
-    vector[n] col_indiv_logodds = raw_col_indiv_logodds * col_indiv_sd + col_logodds[col_index];
-    vector[row_n] row_logodds = raw_row_logodds * row_sd + row_mean;
-    vector[n] row_indiv_logodds = raw_row_indiv_logodds * row_indiv_sd + row_logodds[row_index];
-    vector[n] cell_mean = smaller_margin_vec .* row_indiv_logodds + (1-smaller_margin_vec) .* col_indiv_logodds;
-    
-    //incorporate bias
-    vector[colcat_n] colcat_bias = raw_colcat_bias * colcat_bias_sd;
-    vector[col_n] col_bias = raw_col_bias * col_bias_sd + colcat_bias[colcat_index];
-    vector[row_n] row_bias = raw_row_bias * row_bias_sd;
-    vector[n] cell_logodds = raw_cell_logodds * cell_sd + cell_mean + 
-                             overall_bias + row_bias[row_index] + col_bias[col_index];
-}
-model {
-    //priors and hyperpriors
-    
-    //marginal params
-    col_mean ~ normal(0,2);
-    col_sd ~ std_normal();
-    raw_colcat_logodds ~ std_normal();
-    colcat_sd ~ std_normal();
-    raw_col_logodds ~ std_normal();
-    raw_col_indiv_logodds ~ std_normal();
-    col_indiv_sd ~ std_normal();
-    
-    raw_row_logodds ~ std_normal();
-    raw_row_indiv_logodds ~ std_normal();
-    row_mean ~ normal(0,2);
-    row_sd ~ std_normal();
-    row_indiv_sd ~ std_normal();
-    
-    //bias params
-    overall_bias ~ std_normal();
-    raw_row_bias ~ std_normal();
-    raw_col_bias ~ std_normal();
-    raw_colcat_bias ~ std_normal();
-    row_bias_sd ~ std_normal();
-    col_bias_sd ~ std_normal();
-    colcat_bias_sd ~ std_normal();
-    
-    //cell params
-    raw_cell_logodds ~ std_normal();
-    cell_sd ~ std_normal();
-    
-    //likelihood
-    col_count ~ binomial_logit(total, col_indiv_logodds);
-    row_count ~ binomial_logit(total, row_indiv_logodds);
-    cell_count ~ binomial_logit(marginal_total, cell_logodds);
-}
-generated quantities {
-    vector[n] cell_bias = cell_logodds - (cell_mean + overall_bias + row_bias[row_index] + col_bias[col_index]);
-    vector[n] cell_total_prob_bias = inv_logit(cell_logodds) - inv_logit(cell_mean);
-    //vector[n] cell_total_prob_bias_logodds = cell_logodds - cell_mean;
-}
-'
+# traits <- unique(data1$trait)
+# tissues <- unique(data1$tissue)
+# d <- list(cell_count = data1$count,
+#           total = sapply(1:nrow(data1), function(i) total_number_of_possible_hits_matrix[data1$tissue[i], data1$trait[i]]),
+#           row_count = sapply(1:nrow(data1), function(i) n_genes_in_nodes_matrix[data1$tissue[i], data1$trait[i]]),
+#           col_count = sapply(1:nrow(data1), function(i) sig_twas_by_trait_genes_matrix[data1$tissue[i], data1$trait[i]]),
+#           row_index = match(data1$tissue, tissues),
+#           col_index = match(data1$trait, traits),
+#           row_n = length(unique(data1$tissue)),
+#           col_n = length(unique(data1$trait)))
+# 
+# stan_program <- '
+# data {
+#     int<lower=1> row_n;
+#     int<lower=1> col_n;
+#     int<lower=0> total[row_n * col_n];
+#     int<lower=1,upper=row_n> row_index[row_n * col_n];
+#     int<lower=1,upper=col_n> col_index[row_n * col_n];
+#     int<lower=0> row_count[row_n * col_n];
+#     int<lower=0> col_count[row_n * col_n];
+#     int<lower=0> cell_count[row_n * col_n];
+# }
+# transformed data {
+#     int<lower=1> n = row_n * col_n;
+#     int<lower=0,upper=1> smaller_margin[n]; //0 if row, 1 if col
+#     int<lower=0> marginal_total[n];
+#     for(i in 1:n){
+#       //smaller_margin[i] = 1;
+#       smaller_margin[i] = row_count[i] > col_count[i];
+#       marginal_total[i] = smaller_margin[i] * col_count[i] + (1-smaller_margin[i]) * row_count[i];
+#     }
+#     vector[n] smaller_margin_vec = to_vector(smaller_margin);
+# }
+# parameters {
+#     //main parameters
+#     real col_mean;
+#     real<lower=0> col_sd;
+#     vector[col_n] raw_col_logodds;
+#     real<lower=0> col_indiv_sd;
+#     vector[n] raw_col_indiv_logodds;
+# 
+#     real row_mean;
+#     real<lower=0> row_sd;
+#     vector[row_n] raw_row_logodds;
+#     real<lower=0> row_indiv_sd;
+#     vector[n] raw_row_indiv_logodds;
+#     
+#     vector[n] raw_cell_logodds;
+#     real<lower=0> cell_sd;
+#     
+#     //biases in deviations terms
+#     real overall_bias;
+#     vector[row_n] raw_row_bias;
+#     vector[col_n] raw_col_bias;
+#     real<lower=0> row_bias_sd;
+#     real<lower=0> col_bias_sd;
+# }
+# transformed parameters {
+#     //recenter params
+#     vector[col_n] col_logodds = raw_col_logodds * col_sd + col_mean;
+#     vector[n] col_indiv_logodds = raw_col_indiv_logodds * col_indiv_sd + col_logodds[col_index];
+#     vector[row_n] row_logodds = raw_row_logodds * row_sd + row_mean;
+#     vector[n] row_indiv_logodds = raw_row_indiv_logodds * row_indiv_sd + row_logodds[row_index];
+#     vector[n] cell_mean = smaller_margin_vec .* row_indiv_logodds + (1-smaller_margin_vec) .* col_indiv_logodds;
+#     vector[n] cell_logodds = raw_cell_logodds * cell_sd + cell_mean + 
+#                              overall_bias +
+#                              raw_row_bias[row_index] * row_bias_sd + 
+#                              raw_col_bias[col_index] * col_bias_sd;
+# }
+# model {
+#     //priors and hyperpriors
+#     
+#     //marginal params
+#     raw_col_logodds ~ std_normal();
+#     raw_col_indiv_logodds ~ std_normal();
+#     col_mean ~ normal(0,2);
+#     col_sd ~ std_normal();
+#     col_indiv_sd ~ std_normal();
+#     
+#     raw_row_logodds ~ std_normal();
+#     raw_row_indiv_logodds ~ std_normal();
+#     row_mean ~ normal(0,2);
+#     row_sd ~ std_normal();
+#     row_indiv_sd ~ std_normal();
+#     
+#     //bias params
+#     overall_bias ~ std_normal();
+#     raw_row_bias ~ std_normal();
+#     raw_col_bias ~ std_normal();
+#     row_bias_sd ~ std_normal();
+#     col_bias_sd ~ std_normal();
+#     
+#     //cell params
+#     raw_cell_logodds ~ std_normal();
+#     cell_sd ~ std_normal();
+#     
+#     //likelihood
+#     col_count ~ binomial_logit(total, col_indiv_logodds);
+#     row_count ~ binomial_logit(total, row_indiv_logodds);
+#     cell_count ~ binomial_logit(marginal_total, cell_logodds);
+# }
+# generated quantities {
+#     vector[n] cell_bias = cell_logodds - (cell_mean + overall_bias +
+#                              raw_row_bias[row_index] * row_bias_sd + 
+#                              raw_col_bias[col_index] * col_bias_sd);
+#     vector[n] cell_total_prob_bias = inv_logit(cell_logodds) - inv_logit(cell_mean);
+#     vector[n] cell_total_prob_bias_logodds = cell_logodds - cell_mean;
+#     vector[row_n] row_bias = raw_row_bias * row_bias_sd;
+#     vector[col_n] col_bias = raw_col_bias * col_bias_sd;
+# }
+# '
+# 
+# #incorporate a category term
+# traits <- unique(data1$trait)
+# tissues <- unique(data1$tissue)
+# trait_cats <- salient.categories
+# d <- list(cell_count = data1$count,
+#           total = sapply(1:nrow(data1), function(i) total_number_of_possible_hits_matrix[data1$tissue[i], data1$trait[i]]),
+#           row_count = sapply(1:nrow(data1), function(i) n_genes_in_nodes_matrix[data1$tissue[i], data1$trait[i]]),
+#           col_count = sapply(1:nrow(data1), function(i) sig_twas_by_trait_genes_matrix[data1$tissue[i], data1$trait[i]]),
+#           row_index = match(data1$tissue, tissues),
+#           col_index = match(data1$trait, traits),
+#           colcat_index = match(traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] , trait_cats),
+#           row_n = length(tissues),
+#           col_n = length(traits),
+#           colcat_n = length(trait_cats))
+# 
+# stan_program <- '
+# data {
+#     int<lower=1> row_n;
+#     int<lower=1> col_n;
+#     int<lower=1> colcat_n;
+#     int<lower=0> total[row_n * col_n];
+#     int<lower=1,upper=row_n> row_index[row_n * col_n];
+#     int<lower=1,upper=col_n> col_index[row_n * col_n];
+#     int<lower=1,upper=colcat_n> colcat_index[col_n];
+#     int<lower=0> row_count[row_n * col_n];
+#     int<lower=0> col_count[row_n * col_n];
+#     int<lower=0> cell_count[row_n * col_n];
+# }
+# transformed data {
+#     int<lower=1> n = row_n * col_n;
+#     int<lower=0,upper=1> smaller_margin[n]; //0 if row, 1 if col
+#     int<lower=0> marginal_total[n];
+#     for(i in 1:n){
+#       //smaller_margin[i] = 1;
+#       smaller_margin[i] = row_count[i] > col_count[i];
+#       marginal_total[i] = smaller_margin[i] * col_count[i] + (1-smaller_margin[i]) * row_count[i];
+#     }
+#     vector[n] smaller_margin_vec = to_vector(smaller_margin);
+# }
+# parameters {
+#     //col params
+#     real col_mean;
+#     real<lower=0> col_sd;
+#     vector[colcat_n] raw_colcat_logodds;
+#     real<lower=0> colcat_sd;
+#     vector[col_n] raw_col_logodds;
+#     real<lower=0> col_indiv_sd;
+#     vector[n] raw_col_indiv_logodds;
+#     
+#     //row params
+#     real row_mean;
+#     real<lower=0> row_sd;
+#     vector[row_n] raw_row_logodds;
+#     real<lower=0> row_indiv_sd;
+#     vector[n] raw_row_indiv_logodds;
+#     
+#     //cell params
+#     vector[n] raw_cell_logodds;
+#     real<lower=0> cell_sd;
+#     
+#     //biases in deviations terms
+#     real overall_bias;
+#     vector[row_n] raw_row_bias;
+#     vector[col_n] raw_col_bias;
+#     vector[colcat_n] raw_colcat_bias;
+#     real<lower=0> row_bias_sd;
+#     real<lower=0> col_bias_sd;
+#     real<lower=0> colcat_bias_sd;
+# }
+# transformed parameters {
+#     //recenter params
+#     
+#     vector[colcat_n] colcat_logodds = raw_colcat_logodds * col_sd + col_mean;
+#     vector[col_n] col_logodds = raw_col_logodds * colcat_sd + colcat_logodds[colcat_index];
+#     vector[n] col_indiv_logodds = raw_col_indiv_logodds * col_indiv_sd + col_logodds[col_index];
+#     vector[row_n] row_logodds = raw_row_logodds * row_sd + row_mean;
+#     vector[n] row_indiv_logodds = raw_row_indiv_logodds * row_indiv_sd + row_logodds[row_index];
+#     vector[n] cell_mean = smaller_margin_vec .* row_indiv_logodds + (1-smaller_margin_vec) .* col_indiv_logodds;
+#     
+#     //incorporate bias
+#     vector[colcat_n] colcat_bias = raw_colcat_bias * colcat_bias_sd;
+#     vector[col_n] col_bias = raw_col_bias * col_bias_sd + colcat_bias[colcat_index];
+#     vector[row_n] row_bias = raw_row_bias * row_bias_sd;
+#     vector[n] cell_logodds = raw_cell_logodds * cell_sd + cell_mean + 
+#                              overall_bias + row_bias[row_index] + col_bias[col_index];
+# }
+# model {
+#     //priors and hyperpriors
+#     
+#     //marginal params
+#     col_mean ~ normal(0,2);
+#     col_sd ~ std_normal();
+#     raw_colcat_logodds ~ std_normal();
+#     colcat_sd ~ std_normal();
+#     raw_col_logodds ~ std_normal();
+#     raw_col_indiv_logodds ~ std_normal();
+#     col_indiv_sd ~ std_normal();
+#     
+#     raw_row_logodds ~ std_normal();
+#     raw_row_indiv_logodds ~ std_normal();
+#     row_mean ~ normal(0,2);
+#     row_sd ~ std_normal();
+#     row_indiv_sd ~ std_normal();
+#     
+#     //bias params
+#     overall_bias ~ std_normal();
+#     raw_row_bias ~ std_normal();
+#     raw_col_bias ~ std_normal();
+#     raw_colcat_bias ~ std_normal();
+#     row_bias_sd ~ std_normal();
+#     col_bias_sd ~ std_normal();
+#     colcat_bias_sd ~ std_normal();
+#     
+#     //cell params
+#     raw_cell_logodds ~ std_normal();
+#     cell_sd ~ std_normal();
+#     
+#     //likelihood
+#     col_count ~ binomial_logit(total, col_indiv_logodds);
+#     row_count ~ binomial_logit(total, row_indiv_logodds);
+#     cell_count ~ binomial_logit(marginal_total, cell_logodds);
+# }
+# generated quantities {
+#     vector[n] cell_bias = cell_logodds - (cell_mean + overall_bias + row_bias[row_index] + col_bias[col_index]);
+#     vector[n] cell_total_prob_bias = inv_logit(cell_logodds) - inv_logit(cell_mean);
+#     //vector[n] cell_total_prob_bias_logodds = cell_logodds - cell_mean;
+# }
+# '
 
 # #incorporate two category terms
 # traits <- unique(data1$trait)
@@ -2363,18 +2363,21 @@ generated quantities {
 # }
 # '
 
-
-if(!exists("curr_stan_program") || stan_program != curr_stan_program){
-  curr_stan_program <- stan_program
-  f <- write_stan_file(stan_program)
-}
-mod <- cmdstan_model(f)
-
-#fit model
-write_stan_file(stan_program, dir = "~/Desktop/", basename = paste0(base, ifelse(use_all_cats, "_allCats", "")))
-write_stan_json(d, paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".json"))
-fit_model <- T
+fit_model <- F
 if(fit_model){
+  
+  #compile model
+  if(!exists("curr_stan_program") || stan_program != curr_stan_program){
+    curr_stan_program <- stan_program
+    f <- write_stan_file(stan_program)
+  }
+  mod <- cmdstan_model(f)
+  
+  #write model
+  write_stan_file(stan_program, dir = "~/Desktop/", basename = paste0(base, ifelse(use_all_cats, "_allCats", "")))
+  write_stan_json(d, paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".json"))
+  
+  #fit model
   out <- mod$sample(chains = 4, iter_sampling = 2.5E3, iter_warmup = 2.5E3, data = d, parallel_chains = 4, 
                   adapt_delta = 0.99, refresh = 50, init = 0.1, max_treedepth = 20, thin = 2)
   summ <- out$summary()
@@ -2475,7 +2478,7 @@ cbind(trait_cats[order(colcatbias)], sort(colcatbias))
 
 #generate a "significance" matrix
 signif_threshold <- 0.05
-signif_df <- data1[1:(nrow(data1)), c("tissue", "trait")]
+signif_df <- data_subset[1:(nrow(data_subset)), c("tissue", "trait")]
 signif_df$prob_diff_is_positive <- apply(subset_samps("cell_total_prob_bias", c("raw", "sd", "logodds"), samps = samps), 2, prop_greater_than_0)
 signif_df$signif <- 0
 signif_df$signif[signif_df$prob_diff_is_positive > (1-signif_threshold)] <- 1
@@ -2487,6 +2490,14 @@ signif_matrix <- reshape(signif_df[,-match("prob_diff_is_positive", colnames(sig
 rownames(signif_matrix) <- signif_matrix$tissue
 signif_matrix <- signif_matrix[,-match("tissue", colnames(signif_matrix))]
 colnames(signif_matrix) <- gsub(colnames(signif_matrix), pattern = "signif.", replacement = "")
+
+#add back in the HYPOTHALAMUS if we removed it
+if(nrow(signif_matrix) != nrow(n_deg_sigtwas_intersect)){
+  signif_matrix <- signif_matrix[rownames(n_deg_sigtwas_intersect),]
+  rownames(signif_matrix) <- rownames(n_deg_sigtwas_intersect)
+  signif_matrix[is.na(signif_matrix)] <- 0
+}
+
 if(!all(colnames(signif_matrix) == colnames(n_deg_sigtwas_intersect)) & all(rownames(signif_matrix) == rownames(n_deg_sigtwas_intersect))){
   stop("something's wrong with the significance matrix")
 }
@@ -2698,7 +2709,7 @@ inside_cols[overlaps_with_zero(qi_95)] <- "white"
 tmp <- vioplot::vioplot(x = as.matrix(subset_samps("row_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,tord], T, 
                       col = tissue_cols[tissues][tord], outline=FALSE, xaxt = "n",
                       names = tissues[tord], srt = 90, range = 0, xlab = "", lineCol = tissue_cols[tissues][tord],
-                      ylab = "meta-analyzed tissue enrichment (logodds-scale)", cex.lab = 1, plotCentre = "point", 
+                      ylab = "multilevel tissue enrichment (logodds-scale)", cex.lab = 1, plotCentre = "point", 
                       colMed = tissue_cols[tissues][tord])
 tick <- seq_along(tissues)
 axis(1, at = tick, labels = F)
@@ -2726,7 +2737,7 @@ inside_cols[overlaps_with_zero(qi_95)] <- "white"
 vioplot::vioplot(x = as.matrix(subset_samps("colcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,tord], T, 
                  col = category_colors[trait_cats][tord], outline=FALSE, xaxt = "n",
                  names = trait_cats[tord], srt = 90, range = 0, xlab = "", lineCol = category_colors[trait_cats][tord],
-                 ylab = "meta-analyzed category enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", 
+                 ylab = "multilevel category enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", 
                  colMed = category_colors[trait_cats][tord])
 tick <- seq_along(trait_cats)
 axis(1, at = tick, labels = F)
@@ -2756,7 +2767,7 @@ tmp <- vioplot::vioplot(x = as.matrix((subset_samps("col_bias", c("raw", "sd"), 
                         outline=FALSE, xaxt = "n", xlim = c(4,sum(trait_subset_bool)-3),
                         names = tissues[tord], srt = 90, range = 0, xlab = "", 
                         lineCol = category_colors[traitwise_partitions$Category[match(traits[trait_subset_bool], traitwise_partitions$Tag)]][tord],
-                        ylab = "meta-analyzed trait enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", 
+                        ylab = "multilevel trait enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", 
                         colMed = category_colors[traitwise_partitions$Category[match(traits[trait_subset_bool], traitwise_partitions$Tag)]][tord])
 tick <- seq_along(traits[trait_subset_bool])
 axis(1, at = tick, labels = F)
@@ -2786,7 +2797,7 @@ inside_cols[overlaps_with_zero(qi_95)] <- "white"
 vioplot::vioplot(x = as.matrix(subset_samps("rowcat_bias", c("raw", "sd"), samps = samps) + samps$overall_bias)[,tord], T,
                  col = tissue_category_colors[tissue_cats][tord], outline=FALSE, xaxt = "n",
                  names = tissue_cats[tord], srt = 90, range = 0, xlab = "", lineCol = tissue_category_colors[tissue_cats][tord],
-                 ylab = "meta-analyzed category enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", colMed = 1)
+                 ylab = "multilevel category enrichment\n(logodds-scale)", cex.lab = 1, plotCentre = "point", colMed = 1)
 tick <- seq_along(tissue_cats)
 axis(1, at = tick, labels = F)
 for(i in 1:length(tissue_cats)){
@@ -3655,22 +3666,32 @@ generated quantities {
 }
 '
 
-if(!exists("curr_stan_program") || stan_program != curr_stan_program){
-  curr_stan_program <- stan_program
-  f <- write_stan_file(stan_program)
+fit_model <- F
+if(fit_model){
+  
+  #compile model
+  if(!exists("curr_stan_program") || stan_program != curr_stan_program){
+    curr_stan_program <- stan_program
+    f <- write_stan_file(stan_program)
+  }
+  mod <- cmdstan_model(f)
+  
+  #write model
+  write_stan_file(stan_program, dir = "~/Desktop/", basename = paste0(base, ifelse(use_all_cats, "_allCats", "")))
+  write_stan_json(d, paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".json"))
+  
+  #fit model
+  out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3, data = d, parallel_chains = 4, 
+                    adapt_delta = 0.9, refresh = 50, init = 0.1, max_treedepth = 20, thin = 5)
+  # out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3, data = d, parallel_chains = 4, adapt_delta = 0.9, refresh = 10, init = 0.1, max_treedepth = 15)
+  summ <- out$summary()
+  summ[order(summ$ess_bulk),]
+  summ[order(summ$rhat, decreasing = T),]
+  save(out, file = paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".cmdStanR.fit"))
+} else {
+  load(paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".cmdStanR.fit"))
 }
-mod <- cmdstan_model(f)
 
-
-#fit model
-# write_stan_file(stan_program, dir = "~/Desktop/", basename = "deviation_from_expected_prop_pos")
-# write_stan_json(d, "~/Desktop/deviation_from_expected_prop_pos.json")
-out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3, data = d, parallel_chains = 4, 
-                  adapt_delta = 0.9, refresh = 50, init = 0.1, max_treedepth = 20, thin = 5)
-# out <- mod$sample(chains = 4, iter_sampling = 1E3, iter_warmup = 1E3, data = d, parallel_chains = 4, adapt_delta = 0.9, refresh = 10, init = 0.1, max_treedepth = 15)
-summ <- out$summary()
-summ[order(summ$ess_bulk),]
-summ[order(summ$rhat, decreasing = T),]
 samps <- data.frame(as_draws_df(out$draws()))
 
 #take a look at output
@@ -4924,18 +4945,21 @@ generated quantities {
 # }
 # '
 
-
-if(!exists("curr_stan_program") || stan_program != curr_stan_program){
-  curr_stan_program <- stan_program
-  f <- write_stan_file(stan_program)
-}
-mod <- cmdstan_model(f)
-
-#fit model
-write_stan_file(stan_program, dir = "~/Desktop/", basename = paste0(base, ifelse(use_all_cats, "_allCats", "")))
-write_stan_json(d, paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".json"))
 fit_model <- F
 if(fit_model){
+  
+  #compile model
+  if(!exists("curr_stan_program") || stan_program != curr_stan_program){
+    curr_stan_program <- stan_program
+    f <- write_stan_file(stan_program)
+  }
+  mod <- cmdstan_model(f)
+  
+  #write model
+  write_stan_file(stan_program, dir = "~/Desktop/", basename = paste0(base, ifelse(use_all_cats, "_allCats", "")))
+  write_stan_json(d, paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".json"))
+  
+  #fit model
   out <- mod$sample(chains = 4, iter_sampling = 2E3, iter_warmup = 2E3, data = d, parallel_chains = 4, 
                     adapt_delta = 0.99, refresh = 50, init = 0.1, max_treedepth = 20, thin = 2)
   summ <- out$summary()
@@ -4990,9 +5014,9 @@ subdata[which((apply(subset_samps("cell_total_prob_bias", c("raw", "sd"), samps 
 #cell depletions
 subdata[which((apply(subset_samps("cell_total_prob_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)) < alpha),
      c("count_inters", "total_inters", "tissue", "trait")]
-#meta-analyzed trait enrichments
+#multilevel trait enrichments
 trait_key[traits[which((apply(subset_samps("col_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)) > 1-alpha)]]
-#meta-analyzed trait depletions
+#multilevel trait depletions
 trait_key[traits[which((apply(subset_samps("col_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)) < alpha)]]
 #category enrichments
 cbind(trait_cats[which((apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)) < alpha)],
@@ -6638,6 +6662,50 @@ fig_label("b)", shrinkX = 1, cex = 2)
 dev.off()
 
 #### composite figure for the heatmap, posterior output, and scatterplot ####
+
+#load appropriate model fit
+if(base != "deviation_from_expected_logodds_split_the_difference"){
+
+  base = "deviation_from_expected_logodds_split_the_difference"
+  load(paste0("~/Desktop/", paste0(base, ifelse(use_all_cats, "_allCats", "")),".cmdStanR.fit"))
+  
+  samps <- data.frame(as_draws_df(out$draws()))
+  prop_greater_than_0 <- function(x) mean(x>0)
+  cellbias <- apply(subset_samps("cell_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)
+  celltotalbias <- apply(subset_samps("cell_total_prob_bias", c("raw", "sd", "logodds"), samps = samps), 2, prop_greater_than_0)
+  rowbias <- apply(subset_samps("row_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)
+  colbias <- apply(subset_samps("col_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)
+  trait_key <- setNames(trait_categories$new_Phenotype, trait_categories$Tag)
+  colcatbias <- apply(subset_samps("colcat_bias", c("raw", "sd"), samps = samps), 2, prop_greater_than_0)
+  
+  #generate a "significance" matrix
+  signif_threshold <- 0.05
+  signif_df <- data_subset[1:(nrow(data_subset)), c("tissue", "trait")]
+  signif_df$prob_diff_is_positive <- apply(subset_samps("cell_total_prob_bias", c("raw", "sd", "logodds"), samps = samps), 2, prop_greater_than_0)
+  signif_df$signif <- 0
+  signif_df$signif[signif_df$prob_diff_is_positive > (1-signif_threshold)] <- 1
+  signif_df$signif[signif_df$prob_diff_is_positive < signif_threshold] <- -1
+  
+  signif_df[signif_df$signif != 0,]
+  
+  signif_matrix <- reshape(signif_df[,-match("prob_diff_is_positive", colnames(signif_df))], idvar = "tissue", timevar = "trait", direction = "wide")
+  rownames(signif_matrix) <- signif_matrix$tissue
+  signif_matrix <- signif_matrix[,-match("tissue", colnames(signif_matrix))]
+  colnames(signif_matrix) <- gsub(colnames(signif_matrix), pattern = "signif.", replacement = "")
+  
+  #add back in the HYPOTHALAMUS if we removed it
+  if(nrow(signif_matrix) != nrow(n_deg_sigtwas_intersect)){
+    signif_matrix <- signif_matrix[rownames(n_deg_sigtwas_intersect),]
+    rownames(signif_matrix) <- rownames(n_deg_sigtwas_intersect)
+    signif_matrix[is.na(signif_matrix)] <- 0
+  }
+  
+  if(!all(colnames(signif_matrix) == colnames(n_deg_sigtwas_intersect)) & all(rownames(signif_matrix) == rownames(n_deg_sigtwas_intersect))){
+    stop("something's wrong with the significance matrix")
+  }
+}
+
+
 cols = list(Tissue=tissue_cols[names(motrpac_gtex_map)], 
             Time=group_cols[paste0(c(1,2,4,8), "w")],
             Sex=sex_cols[c('male','female')])
@@ -6645,13 +6713,13 @@ mars <- list(c(6,
                0 + ifelse(subset_to_traits, 2, 0),
                6 + ifelse(group_by_tissue_type, disp_amount * 4.5, 0),
                6.5 + ifelse(subset_to_traits, 1, 0)),
-             c(3.5,7,3,7)+1, 
-             c(3.5,1,3,14)+1,
+             c(3.5,7,3,7)+0.5, 
+             c(3.5,1,3,14)+0.5,
              c(4.25,2.5,2.5,5.5), 
              c(4.25,2.5,2.5,5.5), 
              c(4.25,7.5,2.5,0.5))
 
-cairo_pdf(paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/pass1b_composite_intersect_enrichment_model.pdf"), 
+cairo_pdf(paste0("~/Documents/Documents - nikolai/motrpac_companion/figures/fig4_intersect-enrichment.pdf"), 
           width = 2300 / 72 * ncol(table_to_use) / 80, 
           height = 900 / 72 + ifelse(group_by_tissue_type, disp_amount * 0.75, 0), 
           family="Arial Unicode MS", pointsize = 18.5)
@@ -6763,7 +6831,8 @@ if(length(salient.categories) < 9){
 }
 cols$category <- category_colors
 
-plot(1, xaxt="n",yaxt="n",bty="n",pch="",ylab="",xlab="", main="", sub="", xlim= c(-5,ncol(table_to_use)), ylim = c(-5,nrow(table_to_use)))
+plot(1, xaxt="n",yaxt="n",bty="n",pch="",ylab="",xlab="", main="", sub="", 
+     xlim= c(-5,ncol(table_to_use)), ylim = c(-5,nrow(table_to_use)))
 
 if(group_by_tissue_type){
   tissue_cats_bars_xlocs <- sapply(tissue_cats, function(tc) max(strwidth(tc, units = "user"))) + 0.2
@@ -6931,13 +7000,13 @@ if(incl_significance){
   #      x = ncol(table_to_use) + x_adj - 1.75,
   #      y = yb_adjust-3.25, pos = 4, cex = 0.75)
   
+  signif_label <- paste0("Pr(Dep.) > ", (1 - signif_threshold), " : ")
   ctr <- 0.5
   cxr = ncol(table_to_use) + x_adj - 2.25 + strwidth(signif_label) + 0.45
   cxl = ncol(table_to_use) + x_adj - 2.25 + strwidth(signif_label) - 0.45
   cyb = yb_adjust - 3.75 - 0.45
   cyt = yb_adjust - 3.75 + 0.45
   
-  signif_label <- paste0("Pr(Dep.) > ", (1 - signif_threshold), " : ")
   text(labels = signif_label,
        x = ncol(table_to_use) + x_adj - 1.75,
        y = cyb * 0.325 + cyt * 0.675, pos = 4, cex = 0.75)
@@ -7012,7 +7081,7 @@ segments(x0 = -2, x1 = 0.5, y0 = nrow(table_to_use) + 3 + ifelse(group_by_tissue
            ifelse(order_by_counts, 0, -0.8) + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0) + 
            ifelse(subset_to_traits, 1, 1.5), lwd = 2)
 text(x = -2, y = nrow(table_to_use) + 3 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0), pos = 2, 
-     labels = paste0(ifelse(use_range_for_maginal_labels, "total", "max"), " # of\nTWAS hits"))
+     labels = paste0(ifelse(use_range_for_maginal_labels, "total", "max"), " # of\nPrediXcan hits"))
 
 #vertical label for total
 segments(x0 = ncol(table_to_use) + 2.5, x1 = ncol(table_to_use) + 1, 
@@ -7030,7 +7099,7 @@ text(x = ncol(table_to_use) + 2 + ifelse(order_by_counts, 0, 2), y = nrow(table_
 text(labels = ifelse(use_counts, latex2exp::TeX("$n_{intersect}$"), latex2exp::TeX("‰_{ intersect}")), pos = 3, font = 2, cex = 1.25,
      x = ncol(table_to_use) + x_adj + 2, y = nrow(table_to_use) + y_adj + 0.875 + ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0))
 if(use_counts){
-  text(latex2exp::TeX(paste0("number of genes in 8w - F↓M↓+ 8w - F↑M↑ with IHW significant TWAS at $\\alpha$ = 0.05")), 
+  text(latex2exp::TeX(paste0("number of genes in 8w - F↓M↓+ 8w - F↑M↑ with IHW-significant PrediXcan at $\\alpha$ = 0.05")), 
        x = 2 + ifelse(subset_to_traits, 0, 20), 
        y = nrow(table_to_use) + 3.25 + 
          ifelse(group_by_tissue_type, tissue_disps[length(tissue_disps)], 0) + 
@@ -7041,7 +7110,6 @@ if(use_counts){
 }
 
 fig_label("a)", shrinkX = 0.85, cex = 2, shrinkY = 0.96, xpd = NA)
-fig_label("b)", shrinkX = 0.35, cex = 2, shrinkY = -0.63, xpd = NA)
 
 
 # ~~~~~~~~~~~~ #
@@ -7236,7 +7304,8 @@ text(labels = legvals[1:2], x = xl + (xr-xl)/15 + cumsum(legcexs)[1:2]/4000, y =
      pos = 4, xpd = NA, cex = 0.5)
 
 
-fig_label("c)", shrinkX = 1, shrinkY = 0.925, cex = 2)
+fig_label("b)", shrinkX = 0.865, cex = 2, shrinkY = 0.95, xpd = NA)
+fig_label("c)", shrinkX = 0.99, shrinkY = 0.95, cex = 2)
 
 
 # ~~~~~~~~~~~~ #
@@ -7273,7 +7342,7 @@ xtickvals <- -1:2/5
 segments(x0 = xtickvals, x1 = xtickvals, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/100, xpd = NA)
 text(x = xtickvals, y = par("usr")[3] - diff(par("usr")[3:4])/30, labels = xtickvals)
 text(x = mean(par("usr")[1:2]), y = par("usr")[3]-diff(par("usr")[3:4])/10, 
-     labels = "meta-analyzed tissue\nenrichment (logodds-scale)", cex = 1.25, xpd = NA)
+     labels = "multilevel tissue\nenrichment (logodds-scale)", cex = 1.25, xpd = NA)
 tick <- seq_along(colnames(focal_samps))
 axis(2, at = tick, labels = F)
 for(i in 1:length(colnames(focal_samps))){
@@ -7297,8 +7366,8 @@ if(T){
 }
 
 #legend for violin plots
-xval <- -1.05
-yval <- -0.25
+xval <- -0.85
+yval <- 0.5 #2
 yh <- 4
 yt <- yval + yh/2
 yb <- yval - yh/2
@@ -7326,12 +7395,14 @@ segments(x0 = min(xvals) - diff(range(xvals))/100, x1 = max(xvals) + diff(range(
 points(xval, min(yvals) - diff(range(yvals)) / 8, pch = 19, xpd = NA, cex = 1.2)
 segments(x0 = min(xvals), x1 = max(xvals), y0 = min(yvals) - diff(range(yvals)) / 8, y1 = min(yvals) - diff(range(yvals)) / 8, xpd = NA, lwd = 2, col = "white")
 points(xval, min(yvals) - diff(range(yvals)) / 8, pch = 19, xpd = NA, cex = 1, col = "white")
-text(latex2exp::TeX("$CI_{95}$ includes 0$"), x = max(xvals) + diff(range(xvals))/100, y = min(yvals) - diff(range(yvals)) / 7, pos = 4, xpd = NA, cex = 0.875)
+text(latex2exp::TeX("$CI_{95}$ includes 0$"), x = max(xvals) + diff(range(xvals))/100, 
+     y = min(yvals) - diff(range(yvals)) / 7, pos = 4, xpd = NA, cex = 0.875)
 
 segments(x0 = min(xvals) - diff(range(xvals))/100, x1 = max(xvals) + diff(range(xvals))/100, 
          y0 = min(yvals) - diff(range(yvals)) / 8 * 2, y1 = min(yvals) - diff(range(yvals)) / 8 * 2, xpd = NA, lwd = 3.25)
 points(xval, min(yvals) - diff(range(yvals)) / 8 * 2, pch = 19, xpd = NA, cex = 1.2)
-text(latex2exp::TeX("$CI_{95}$ excludes 0$"), x = max(xvals) + diff(range(xvals))/100, y = min(yvals) - diff(range(yvals)) / 7 - diff(range(yvals)) / 8, 
+text(latex2exp::TeX("$CI_{95}$ excludes 0$"), x = max(xvals) + diff(range(xvals))/100, 
+     y = min(yvals) - diff(range(yvals)) / 7 - diff(range(yvals)) / 8, 
      pos = 4, xpd = NA, cex = 0.875)
 
 
@@ -7378,11 +7449,11 @@ tmp <- vioplot::vioplot(x = focal_samps[,tord], T,
                         horizontal = T)
 
 #axes
-xtickvals <- -2:4/5
+xtickvals <- -2:2/5
 segments(x0 = xtickvals, x1 = xtickvals, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/100, xpd = NA)
 text(x = xtickvals, y = par("usr")[3] - diff(par("usr")[3:4])/30, labels = xtickvals)
 text(x = mean(par("usr")[1:2]), y = par("usr")[3]-diff(par("usr")[3:4])/10, 
-     labels = "meta-analyzed category\nenrichment (logodds-scale)", cex = 1.25, xpd = NA)
+     labels = "multilevel category\nenrichment (logodds-scale)", cex = 1.25, xpd = NA)
 tick <- seq_along(colnames(focal_samps))
 axis(2, at = tick, labels = F)
 for(i in 1:length(colnames(focal_samps))){
@@ -7414,6 +7485,7 @@ if(T){
 ##
 
 par(mar = mars[[6]])
+trait_subset_bool <- traitwise_partitions$Category[match(traits, traitwise_partitions$Tag)] %in% salient.categories
 focal_samps <- subset_samps("col_bias", c("raw", "sd"), samps = samps) + samps$overall_bias + 
   subset_samps("colcat_bias", c("raw", "sd"), samps = samps)[,match(trait_categories$Category[match(traits, trait_categories$Tag)], trait_cats)]
 focal_samps <- apply(focal_samps, 2, trim_n, n_to_trim)
@@ -7439,7 +7511,7 @@ xtickvals <- -2:2/2
 segments(x0 = xtickvals, x1 = xtickvals, y0 = par("usr")[3], y1 = par("usr")[3] - diff(par("usr")[3:4])/200, xpd = NA)
 text(x = xtickvals, y = par("usr")[3] - diff(par("usr")[3:4])/75, labels = xtickvals)
 text(x = mean(par("usr")[1:2]), y = par("usr")[3]-diff(par("usr")[3:4])/25, 
-     labels = "meta-analyzed trait\nenrichment(logodds-scale)", cex = 1.25, xpd = NA)
+     labels = "multilevel trait\nenrichment (logodds-scale)", cex = 1.25, xpd = NA)
 tick <- seq_along(colnames(focal_samps))
 axis(2, at = tick, labels = F)
 for(i in 1:length(colnames(focal_samps))){
