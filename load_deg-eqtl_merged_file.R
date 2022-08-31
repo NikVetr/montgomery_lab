@@ -1,3 +1,27 @@
+# load libraries
+library(ks)
+library(arrow)
+library(data.table)
+library(edgeR)
+library(limma)
+library(DESeq2)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(org.Rn.eg.db)
+library(biomaRt)
+library(MotrpacBicQC)
+library(plotrix)
+library(ggplot2)
+library(testit)
+library(circlize)
+library(jpeg)
+library(doParallel)
+library(pracma)
+library(data.table)
+library(foreach)
+library(doParallel)
+library(parallel)
+
 # get tissue labels 
 # load MotrpacBicQC conversion tables 
 bic_animal_tissue_code = as.data.table(MotrpacBicQC::bic_animal_tissue_code)
@@ -104,13 +128,11 @@ if(!exists("deg_eqtl_list")){
     gtex_tissue = motrpac_gtex_map[[motrpac_tissue]]
     gtex_egene = fread(sprintf('%s/%s.v8.egenes.txt.gz',eqtl,gtex_tissue), sep='\t', header=T)
     gtex_egene[, human_ensembl_gene := gsub('\\..*','',gene_id)]
-    gtex_egene$human_gene_symbol <- gtex_egene$gene_name
-    
-    
+    # gtex_egene$human_gene_symbol <- gtex_egene$gene_name
     
     # match human genes with rat ensembl genes 
-    gtex_egene = merge(gtex_egene, map, by='human_gene_symbol')
-    gtex_motrpac = merge(gtex_egene, rna_dea$timewise_dea[tissue == motrpac_tissue], by='feature_ID')
+    gtex_egene = merge(gtex_egene, map, by='human_ensembl_gene')
+    gtex_motrpac = merge(x = gtex_egene, y = rna_dea$timewise_dea[tissue == motrpac_tissue], by='feature_ID')
     gtex_motrpac$abs_slope <- abs(gtex_motrpac$slope)
     
     cat(paste0("prop of feature_IDs matched: ", round(length(unique(gtex_motrpac$feature_ID)) / 
@@ -213,8 +235,8 @@ if(calc_gene_intersect){
 
 
 
-cols = list(Tissue=tissue_cols[names(deg_eqtl_list)], 
-            Time=group_cols[paste0(c(1,2,4,8), "w")],
-            Sex=sex_cols[c('male','female')])
+cols = list(Tissue=MotrpacBicQC::tissue_cols[names(deg_eqtl_list)], 
+            Time=MotrpacBicQC::group_cols[paste0(c(1,2,4,8), "w")],
+            Sex=MotrpacBicQC::sex_cols[c('male','female')])
 # cols$Tissue[which(is.na(cols$Tissue))] <- '#C0C0C0'
 # names(cols$Tissue)[which(is.na(names(cols$Tissue)))] <- "t1000-gonads"

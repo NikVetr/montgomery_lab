@@ -593,6 +593,171 @@ dexp_smooth <- function(x, y, r, reweight_trunc_tail = F, reweight_n_pts = F, fi
   return(wy)
 }
 
+trim_n <- function(x, n){
+  ox <- order(x)
+  xi_to_trim <- c(head(ox, n = n / 2), tail(ox, n = n / 2))
+  return(x[-xi_to_trim])
+}
+
+grad_arrow <- function(arrow_locs, prop_head_length = 0.2, prop_shaft_width = 0.5,
+                       cols = c("white", "black"), nslices = 100){
+  colsgrad <- colorRampPalette(colors = cols)(nslices)
+  # split the base of the arrow in nslices and fill each progressively
+  ys <- seq(arrow_locs[3], 
+            arrow_locs[4] - diff(arrow_locs[3:4]) * prop_head_length, 
+            len = nslices + 1)
+  for (i in 1:nslices) {
+    polygon(c(arrow_locs[1] + diff(arrow_locs[1:2]) * prop_shaft_width / 2, 
+              arrow_locs[1] + diff(arrow_locs[1:2]) * prop_shaft_width / 2, 
+              arrow_locs[2] - diff(arrow_locs[1:2]) * prop_shaft_width / 2, 
+              arrow_locs[2] - diff(arrow_locs[1:2]) * prop_shaft_width / 2), 
+            c(ys[i], ys[i+1], ys[i+1], ys[i]), col = colsgrad[i], border = NA)
+  }
+  # add a filled arrowhead
+  polygon(c(arrow_locs[1], mean(arrow_locs[1:2]), arrow_locs[2], arrow_locs[1]), 
+          c(arrow_locs[4] - diff(arrow_locs[3:4]) * prop_head_length, 
+            arrow_locs[4], 
+            arrow_locs[4] - diff(arrow_locs[3:4]) * prop_head_length, 
+            arrow_locs[4] - diff(arrow_locs[3:4]) * prop_head_length), 
+          col = cols[2], border = cols[2])
+  
+}
+
+mcprint <- function(...){
+  system(sprintf('echo "%s"', paste0(..., collapse="")))
+}
+
+jaccard <- function(x1, x2) length(intersect(x1, x2)) / length(union(x1, x2))
+
+#functions for estimation of probit correlations
+
+probs_quadrants <- function(mus, rij){
+  probs <- matrix(0, 2, 2)
+  probs[2,1] <- mvtnorm::pmvnorm(lower = c(-Inf, -Inf), upper = c(0, 0), corr = matrix(c(1,rij,rij,1), 2, 2), mean = mus)[1]
+  probs[1,1] <- mvtnorm::pmvnorm(lower = c(0, -Inf), upper = c(Inf, 0), corr = matrix(c(1,rij,rij,1), 2, 2), mean = mus)[1]
+  probs[1,2] <- mvtnorm::pmvnorm(lower = c(0, 0), upper = c(Inf, Inf), corr = matrix(c(1,rij,rij,1), 2, 2), mean = mus)[1]
+  probs[2,2] <- 1 - sum(probs)
+  return(probs)
+}
+
+ll_biv_probit <- function(data, par) {
+  
+  #undo params
+  rij <- par[1]
+  
+  #undo data
+  ct2x2 <- data$ct2x2
+  mus <- data$mus
+  
+  #compute log likelihood
+  probs <- probs_quadrants(mus, rij)
+  log_probs <- log(probs)
+  ll <- sum(log_probs * ct2x2)
+  
+  #regularize?
+  ll <- ll + dbeta((par + 1) / 2, shape1 = 5, shape2 = 5, log = T)
+  
+  #return log likelihood
+  return(-ll)
+  
+}
+
+ll_biv_probit_mus <- function(data, par) {
+  
+  #undo params
+  rij <- par[1]
+  mus <- par[2:3]
+  
+  #undo data
+  ct2x2 <- data$ct2x2
+  
+  #compute log likelihood
+  probs <- probs_quadrants(mus, rij)
+  log_probs <- log(probs)
+  ll <- sum(log_probs * ct2x2)
+  
+  #regularize?
+  ll <- ll + dbeta((rij + 1) / 2, shape1 = 5, shape2 = 5, log = T)
+  
+  #return log likelihood
+  return(-ll)
+  
+}
+
+estimate_correlations <- function(y, t, optimize_jointly = F, ncores = 12, nearPDadj = T, print_progress = F) {
+  
+  #retrieve metadata
+  ncols <- length(y)
+  
+  #reorder 't's to match 'y's
+  if(!all(names(y) %in% names(t))){return(NA)}
+  t <- t[names(y)]
+  
+  #iterate through all pairs of dimensions, optimizing bivariate probit probability
+  estimated_corrs <- mclapply(1:(ncols-1), function(ci1) sapply((ci1+1):ncols, function(ci2){
+    
+    #find compatible intersect and subset
+    all_poss <- intersect(t[[ci1]], t[[ci2]])
+    n <- length(all_poss)
+    y1 <- y[[ci1]][y[[ci1]] %in% all_poss]
+    y2 <- y[[ci2]][y[[ci2]] %in% all_poss]
+    
+    #return 0 if there are no obs in y1 or y2
+    if(length(y1) == 0 | length(y2) == 0){
+      return(0)
+    }
+    
+    #snag 2x2 contingency table
+    ct2x2 <- matrix(c(length(setdiff(y1,y2)), 
+                      n - length(union(y1,y2)), 
+                      length(intersect(y1,y2)), 
+                      length(setdiff(y2,y1))), 
+                    2, 2)
+    
+    #can optimize jointly or marginally, knowing the location of the mus
+    if(optimize_jointly){
+      optim_out <- optimx::optimx(par = rep(0,3), 
+                                  fn = ll_biv_probit_mus, 
+                                  data = list(ct2x2 = ct2x2), method = "nlm", lower = c(-1,-Inf,-Inf), upper = c(1,Inf,Inf),
+                                  control = list(maxit = 1E3, trace = 0, dowarn = F))
+    } else {
+      mus <- qnorm(c(sum(ct2x2[1,]), sum(ct2x2[,2])) / sum(ct2x2))
+      optim_out <- optimx::optimx(par = 0, 
+                                  fn = ll_biv_probit, 
+                                  data = list(ct2x2 = ct2x2, mus = mus), method = "nlm", lower = -1, upper = 1,
+                                  control = list(maxit = 1E3, trace = 0, dowarn = F))
+    }
+    
+    #print current location
+    if(print_progress){
+      mcprint(paste0(ci1, ", ", ci2, ", ", optim_out$p1))  
+    }
+    
+    #return estimate
+    return(optim_out$p1)
+    
+  }), mc.cores = ncores)
+  
+  #did any traits fail?
+  failed_traits <- which(sapply(estimated_corrs, class) == "try-error")
+  
+  #reconstruct and (optionally) adjust estimated matrix
+  estimated_corr_mat <- matrix(0, nrow = ncols, ncol = ncols)
+  for(ri in 1:(ncols-1)){
+    corrs_to_insert <- estimated_corrs[[ri]]
+    estimated_corr_mat[ri, (ri+1):ncols] <- corrs_to_insert
+  }
+  estimated_corr_mat <- estimated_corr_mat + t(estimated_corr_mat) + diag(ncols)
+  if(nearPDadj){
+    estimated_corr_mat <- as.matrix(Matrix::nearPD(estimated_corr_mat, corr = T)$mat  )
+  }
+  
+  rownames(estimated_corr_mat) <- colnames(estimated_corr_mat) <- names(y)
+  
+  return(estimated_corr_mat)
+  
+}
+
 NULL
 
 
