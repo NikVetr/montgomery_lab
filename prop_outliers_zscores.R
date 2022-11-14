@@ -1,3 +1,4 @@
+#functions
 addImg <- function(
   obj, # an image file imported as an array (e.g. png::readPNG, jpeg::readJPEG)
   x = NULL, # mid x coordinate for image
@@ -72,7 +73,7 @@ prop_outliers <- function(group_diff, outlier_threshold, numerical_integration =
       (pnorm(min(-outlier_threshold * sd_comb, mu1 + outlier_threshold * sd1), mu1, sd1) - pnorm(mu1 - outlier_threshold * sd1, mu1, sd1))*w1, 
       0)
     
-    #symilar symmetry here as before w/ equal variances etc.
+    #similar symmetry here as before w/ equal variances etc.
     
     #sum the probabilities (or return them as components)
     prop_outliers_subpop <- inner_prop1 + outer_prop1 + inner_prop2 + outer_prop2
@@ -82,6 +83,7 @@ prop_outliers <- function(group_diff, outlier_threshold, numerical_integration =
   if(!returnAll){
     return(prop_outliers_mix)
   } else {
+    #these are all the contributions of the subpops to the tails of the mixture pop
     return(list(prop_outliers_mix = prop_outliers_mix, 
                 inner_prop_mix1 = inner_prop_mix1, 
                 outer_prop_mix1 = outer_prop_mix1, 
@@ -112,14 +114,16 @@ prop_outliers(group_diff = group_diff, outlier_threshold = outlier_threshold, nu
 #                                prop_outliers(group_diff = 2, outlier_threshold = 1, numerical_integration = F, range = seq(-10, 10, by = 1E-3))
 #                                )
 
+#### make a static figure ####
+
 #explore range of conditions
 # binsize <- 5E-3
 # range <- seq(-20, 20, by = binsize)
 group_diffs <- seq(0, 8, length.out = 40)
 outlier_thresholds <- 0:1600/200 #in z-scores
 everything_together <- F
-inners_only <- T
-outers_only <- F
+inners_only <- F
+outers_only <- T
 redo_number_crunching <- T
 if(redo_number_crunching | !exists("d")){
   if(everything_together){
@@ -231,7 +235,7 @@ if(inners_only){
 dev.off()
 
 
-#let's draw an explanatory figure too
+#### let's draw an explanatory figure too ####
 grDevices::cairo_pdf(filename = paste0("~/Documents/zscore_terminology.pdf"), width = 800 / 72, height = 600 / 72, family="Arial Unicode MS")
 par(mar = c(4,0,0,2), xpd = F)
 cols2 <- c(cols[1], cols[21], cols[11])
@@ -330,8 +334,19 @@ text(x = 3.625, pos = 1, y = 0.0125, labels = "sub")
 text(x = 3.875, pos = 1, y = 0.0125, labels = "mix")
 dev.off()
 
+#### static figure redux per rachel's suggestion ####
+out <- prop_outliers(group_diff = 1, outlier_threshold = 2.5, returnAll = T)
 
-###
+#gained outliers... not accommodating dist2's contribution to dist1's tail :/
+out$inner_prop1 - out$inner_prop_mix1
+out$inner_prop2 - out$inner_prop_mix2
+
+#lost outliers... not accommodating 
+out$outer_prop1 - out$outer_prop_mix1
+
+
+
+#### animation ####
 # ok, and now instead of just an explanatory figure, let's make an explanatory animation -- first, let's try making the base figure
 ###
 

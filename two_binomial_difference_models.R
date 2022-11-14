@@ -16,13 +16,13 @@ subset_samps <- function(include = "", exclude = "", samps){
 }
 
 #simulation parameters
-p <- 5000
-n <- 2000
+p <- 1000
+n <- 100
 
 #simulate data
 theta <- rnorm(p)
 theta_diff <- rep(0,p)
-theta_diff <- rnorm(p, sd = 0.5)
+# theta_diff <- rnorm(p, sd = 0.5)
 theta_1 <- theta + theta_diff / 2
 theta_2 <- theta - theta_diff / 2
 prob_1 <- invlogit(theta_1)

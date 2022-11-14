@@ -1,7 +1,21 @@
 
 #### define functions ####
 polar2cart <- function(t, r){
-  return(c(r*cos(t), r * sin(t)))
+  if(length(t) == 1 & length(r) == 1){
+    return(c(r*cos(t), r * sin(t)))  
+  } else if(length(t) == 1){
+    return(do.call(rbind, lapply(r, function(ri) polar2cart(t,ri))))
+  } else if(length(r) == 1){
+    return(do.call(rbind, lapply(t, function(ti) polar2cart(ti,r))))
+  } else {
+    if(length(t) > length(r)){
+      rep(r, times = ceiling(length(t) / length(r)))[1:length(t)]
+    } else {
+      rep(t, times = ceiling(length(r) / length(t)))[1:length(r)]
+    }
+    return(do.call(rbind, lapply(1:length(t), function(i) polar2cart(t[i],r[i]))))
+  }
+  
 }
 
 polarp <- function (t, r, col = 1, pch = 1, cex = 1, center = c(0,0)) {
@@ -757,6 +771,336 @@ estimate_correlations <- function(y, t, optimize_jointly = F, ncores = 12, nearP
   return(estimated_corr_mat)
   
 }
+
+ll_biv_probit_multi <- function(data, par) {
+  
+  #undo params
+  rij <- par[1]
+  
+  #undo data
+  cts <- data$cts
+  mus <- data$mus
+  rown <- setNames(names(mus), names(mus))
+  
+  #compute log likelihood
+  ll <- sum(unlist(lapply(rown, function(rown_i){
+    probs <- probs_quadrants(mus[[rown_i]], rij)
+    log_probs <- log(probs)
+    ll <- sum(log_probs * cts[[rown_i]])
+    ll
+  })))
+  
+  
+  #regularize?
+  ll <- ll + dbeta((par + 1) / 2, shape1 = 10, shape2 = 10, log = T)
+  
+  #return log likelihood
+  return(-ll)
+  
+}
+
+estimate_correlations_multi <- function(y, t, ncores = 12, nearPDadj = T, print_progress = F) {
+  
+  #retrieve metadata
+  ncols <- length(y)
+  coln <- setNames(names(y), names(y))
+  nrows <- length(y[[1]])
+  rown <- setNames(names(y[[1]]), names(y[[1]]))
+  
+  #reorder 't's to match 'y's
+  if(!all(names(y) %in% names(t))){return(NA)}
+  t <- t[names(y)]
+  
+  #iterate through all pairs of dimensions, optimizing bivariate probit probability
+  estimated_corrs <- mclapply(1:(ncols-1), function(ci1) sapply((ci1+1):ncols, function(ci2){
+    
+    #get CTs per tissue
+    cts <- lapply(rown, function(ri){
+      #find compatible intersect and subset
+      all_poss <- intersect(t[[ci1]][[ri]], t[[ci2]][[ri]])
+      n <- length(all_poss)
+      y1 <- y[[ci1]][[ri]][ y[[ci1]][[ri]] %in% all_poss ]
+      y2 <- y[[ci2]][[ri]][ y[[ci2]][[ri]] %in% all_poss ]
+      
+      #return 0 if there are no obs in y1 or y2
+      if(length(y1) == 0 | length(y2) == 0){
+        return(NULL)
+      }
+      
+      #snag 2x2 contingency table
+      ct2x2 <- matrix(c(length(setdiff(y1,y2)), 
+                        n - length(union(y1,y2)), 
+                        length(intersect(y1,y2)), 
+                        length(setdiff(y2,y1))), 
+                      2, 2)
+    })
+    
+    #get rid of null values
+    cts <- cts[!sapply(cts, is.null)]
+    if(length(cts) == 0){return(0)}
+    
+    if(print_progress){
+      mcprint(paste0("starting (", ci1, ", ", ci2, "): ", length(cts)))  
+    }
+    
+    #can optimize jointly or marginally, knowing the location of the mus
+    mus <- lapply(cts, function(ct2x2) qnorm(c(sum(ct2x2[1,]), sum(ct2x2[,2])) / sum(ct2x2)))
+    optim_out <- optimx::optimx(par = 0, 
+                                fn = ll_biv_probit_multi, 
+                                data = list(cts = cts, mus = mus), method = "nlm", lower = -1, upper = 1,
+                                control = list(maxit = 1E3, trace = 0, dowarn = F))
+  
+    
+    #print current location
+    if(print_progress){
+      mcprint(paste0("(", ci1, ", ", ci2, "): ", optim_out$p1))  
+    }
+    
+    #return estimate
+    return(optim_out$p1)
+    
+  }), mc.cores = ncores)
+  
+  #did any traits fail?
+  failed_traits <- which(sapply(estimated_corrs, class) == "try-error")
+  
+  #reconstruct and (optionally) adjust estimated matrix
+  estimated_corr_mat <- matrix(0, nrow = ncols, ncol = ncols)
+  for(ri in 1:(ncols-1)){
+    corrs_to_insert <- estimated_corrs[[ri]]
+    estimated_corr_mat[ri, (ri+1):ncols] <- corrs_to_insert
+  }
+  estimated_corr_mat <- estimated_corr_mat + t(estimated_corr_mat) + diag(ncols)
+  if(nearPDadj){
+    estimated_corr_mat <- as.matrix(Matrix::nearPD(estimated_corr_mat, corr = T)$mat  )
+  }
+  
+  rownames(estimated_corr_mat) <- colnames(estimated_corr_mat) <- names(y)
+  
+  return(estimated_corr_mat)
+  
+}
+
+seq3 <- function(xlims, lout, contains = NA, err_up = F){
+  if(!is.na(contains)){
+    nlims <- c(min(contains, xlims), max(contains, xlims))
+  } else {
+    nlims <- xlims
+  }
+  incr <- abs(diff(nlims)) / lout
+  mag <- 10^floor(log10(incr))
+  incr <- ifelse(err_up, floor(incr / mag) * mag, ceiling(incr / mag) * mag)
+  if(!is.na(contains)){
+    down <- seq(contains, nlims[1], by = -incr)
+    up <- seq(contains, nlims[2], by = incr)
+    return(sort(unique(c(down, up))))
+  } else {
+    return(seq(nlims[1] + abs(nlims[1]) %% incr, nlims[2], by = incr))
+  }
+}
+
+xyrat <- function(){
+  prop <- c(diff(par("usr")[1:2]), diff(par("usr")[3:4])) / par("pin")
+  prop[1] / prop[2]
+}
+
+rrect <- function(loc, w, h, pe = 0.25, npts = 50, rot = 0, hat_prop = 0.15, bold_border = 0,
+                  col = 0, lwd = 1, border = 1, background_col = 0, ...){
+  
+  #get arc where yval has height 1, xval has height xyrat
+  xyr <- xyrat()
+  tr <- polar2cart(t = seq(0, pi/2, length.out = round(npts/4)), r = 1) %*% diag(c(xyr, 1))
+  
+  #scale to smaller edge
+  tallboi <- w < (h * xyr)
+  tr <- tr * ifelse(tallboi, pe * w / 2 / xyr, pe * h / 2)
+  
+  #shift to circumscribed centered rectangle quadrant
+  tr[,1] <- (tr[,1] + w / 2 - tr[1,1])
+  tr[,2] <- (tr[,2] + h / 2 - tr[nrow(tr),2])
+  # rect(xleft = loc[1] - w/2, ybottom = loc[2] - h/2, xright = loc[1] + w/2, ytop = loc[2] + h/2)
+  
+  #find polygon points and recenter
+  outer_coords_nc <- rbind(tr, cbind(-rev(tr[,1]), rev(tr[,2])), cbind(-tr[,1], -tr[,2]), cbind(rev(tr[,1]), -rev(tr[,2])))
+  outer_coords <- outer_coords_nc + rep(loc, each = nrow(outer_coords_nc))
+  
+  #first draw outer border if desired & inner polygon
+  if(bold_border > 1E-6){
+    
+    #draw solid outer polygon
+    polygon(outer_coords, col = border, border = border, lwd = 1E-1)
+    
+    #adjust border to bounds
+    bold_border <- max(c(min(c(bold_border, 1)), 0))
+    
+    if(tallboi){
+      nw <- (1-bold_border) * w
+      nh <- h - bold_border * w / xyr
+    } else { #shortboi
+      nw <- w - bold_border * h * xyr
+      nh <- (1-bold_border) * h
+    }
+    
+    tr <- polar2cart(t = seq(0, pi/2, length.out = round(npts/4)), r = 1) %*% diag(c(xyr, 1))
+    tr <- tr * ifelse(tallboi, pe * nw / 2 / xyr, pe * nh / 2)
+    tr[,1] <- (tr[,1] + nw / 2 - tr[1,1])
+    tr[,2] <- (tr[,2] + nh / 2 - tr[nrow(tr),2])
+    
+    inner_coords_nc <- rbind(tr, cbind(-rev(tr[,1]), rev(tr[,2])), cbind(-tr[,1], -tr[,2]), cbind(rev(tr[,1]), -rev(tr[,2])))
+    inner_coords <- inner_coords_nc + rep(loc, each = nrow(inner_coords_nc))
+    # rect(xleft = loc[1] - nw/2, ybottom = loc[2] - nh/2, xright = loc[1] + nw/2, ytop = loc[2] + nh/2)
+    
+    # inner_coords <- outer_coords_nc %*% diag(ifelse2(tallboi,
+    #                                                  c(1-bold_border, 1 - bold_border * w * xyr / h),
+    #                                                  c(1 - bold_border * h / xyr / w, 1-bold_border))
+    #                                          ) +
+    #   rep(loc, each = nrow(inner_coords))
+    
+    polygon(inner_coords, col = background_col, lwd = 1E-1, border = background_col)
+    polygon(inner_coords, col = col, lwd = 1E-1, border = border)
+  } else {
+    polygon(outer_coords, col = col, lwd = lwd, border = border)
+  }
+  
+  #add a hat if desired
+  if(hat_prop > 1E-6){
+    sub_coords <- outer_coords[outer_coords[,2] > loc[2] - h/2 + h*(1-hat_prop),]
+    if(bold_border > 1E-6){
+      polygon(sub_coords, col = background_col, lwd = lwd, border = background_col)
+      polygon(sub_coords, col = col, lwd = 1E-6, border = border)
+    } else {
+      polygon(sub_coords, col = col, lwd = lwd, border = border)  
+    }
+  }
+  
+}
+
+grad_arrow_curve <- function(arrow_locs, prop_head_width = 2, prop_shaft_length = 0.1,
+                             cols = c("white", "black"), nslices = 500, direc = "h", w = 0.25,
+                             raster = T, xpd = NA, raster_res = 51, interp_raster = T,
+                             col_alpha = 1, col_pow = 0.5, taper_ratio = 0.45, taper_pow = 1.5,
+                             outline = T, outline_lwd = 2.5, outline_col = "black"){
+  
+  if(direc == "h"){
+    dx <- diff(arrow_locs[1:2]) * (1-prop_shaft_length)
+    dy <- diff(arrow_locs[3:4])
+  } else if(direc == "v"){
+    dx <- diff(arrow_locs[1:2])
+    dy <- diff(arrow_locs[3:4]) * (1-prop_shaft_length)
+  }
+  
+  colsgrad <- colorRampPalette(colors = cols)(nslices * 10)
+  colsgrad <- colsgrad[round((seq(1, (nslices*10)^col_pow, length.out=nslices))^(1/col_pow))]
+  colsgrad <- adjustcolor(colsgrad, col_alpha)
+  
+  # split the base of the arrow in nslices and fill each progressively
+  piseq <- seq(-pi/2,pi/2,length.out=nslices+1)
+  
+  if(direc == "h"){
+    xs <- seq(arrow_locs[1],arrow_locs[1]+dx, length.out=nslices+1)
+    ys <- dy*(sin(piseq)+1)/2 + arrow_locs[3]
+    m <- cos(piseq)/2 * sign(dy) * sign(dx)
+    t <- atan(m)
+    dispx <- w * sin(t) / 2
+    dispy <- w * cos(t) / 2
+  } else if (direc == "v"){
+    ys <- seq(arrow_locs[3],arrow_locs[3]+dy, length.out=nslices+1)
+    xs <- dx*(sin(piseq)+1)/2 + arrow_locs[1]
+    m <- cos(piseq)/2 * sign(dy) * sign(dx)
+    t <- atan(m)
+    dispx <- w * cos(t) / 2
+    dispy <- w * sin(t) / 2
+  }
+  
+  #taper the arrow if desired
+  taper <- seq(1, taper_ratio^taper_pow, length.out=nslices+1)^(1/taper_pow)
+  dispx <- dispx * taper
+  dispy <- dispy * taper
+  
+  #final coords
+  coords <- data.frame(x1 = xs - dispx, y1 = ys + dispy,
+                       x2 = xs + dispx, y2 = ys - dispy
+  )
+  if(direc == "h"){
+    head_coords <- data.frame(x = rev(c(xs[nslices], arrow_locs[2], xs[nslices])), 
+                              y = rev(c(ys[nslices] - prop_head_width * w / 2 * taper_ratio, ys[nslices], ys[nslices] + prop_head_width * w / 2 * taper_ratio)))
+  } else if(direc == "v"){
+    head_coords <- data.frame(x = c(xs[nslices] - prop_head_width * w / 2 * taper_ratio, xs[nslices], xs[nslices] + prop_head_width * w / 2 * taper_ratio), 
+                              y = c(ys[nslices], arrow_locs[4], ys[nslices]))
+  }
+  
+  
+  if(raster){
+    
+    #get plotting params
+    usr <- par("usr")
+    upct <- par("plt")
+    gr_usr <- usr + c(diff(usr[1:2]) / diff(upct[1:2]) * (c(0,1) - upct[1:2]),
+                      diff(usr[3:4]) / diff(upct[3:4]) * (c(0,1) - upct[3:4]))
+    
+    #write to temporary png
+    tmp <- tempfile()
+    
+    png(tmp, width = par("din")[1], height = par("din")[2], units = "in", res = raster_res, bg = "transparent", type="cairo")
+    par(mar = c(0,0,0,0), xpd = NA)
+    plot.new(); plot.window(xlim=gr_usr[1:2], ylim=gr_usr[3:4], xaxs = "i", yaxs = "i")
+    
+    #plot the arrows
+    if(length(cols) == 1){
+      polygon(x = c(coords$x1, rev(coords$x2)), y = c(coords$y1, rev(coords$y2)), cols = cols, border = NA)  
+    } else {
+      for(i in 1:nslices){
+        polygon(x = c(coords$x1[i], coords$x1[i+1], coords$x2[i+1], coords$x2[i]), 
+                y = c(coords$y1[i], coords$y1[i+1], coords$y2[i+1], coords$y2[i]), 
+                col = colsgrad[i], border = NA) 
+      }
+    }
+    if(direc == "h"){
+      polygon(x = head_coords$x, y = head_coords$y, col = colsgrad[nslices], border = NA)
+    } else if(direc == "v"){
+      polygon(x = head_coords$x, y = head_coords$y, col = colsgrad[nslices], border = NA)
+    }
+    dev.off()
+    
+    #draw to file
+    rasterImage(png::readPNG(tmp), gr_usr[1], gr_usr[3], gr_usr[2], gr_usr[4], interpolate = interp_raster, xpd = xpd)
+    
+    #delete temp file
+    rm(tmp)
+    
+  } else {
+    
+    #or alternatively draw it in full vector graphics
+    if(length(cols) == 1){
+      polygon(x = c(coords$x1, rev(coords$x2)), y = c(coords$y1, rev(coords$y2)), cols = cols, border = NA, xpd = xpd)  
+    } else {
+      for(i in 1:nslices){
+        polygon(x = c(coords$x1[i], coords$x1[i+1], coords$x2[i+1], coords$x2[i]), 
+                y = c(coords$y1[i], coords$y1[i+1], coords$y2[i+1], coords$y2[i]), 
+                col = colsgrad[i], border = NA, xpd = xpd) 
+      }
+    }
+    if(direc == "h"){
+      polygon(x = head_coords$x, y = head_coords$y, col = colsgrad[nslices], border = NA)
+    } else if(direc == "v"){
+      polygon(x = head_coords$x, y = head_coords$y, col = colsgrad[nslices], border = NA)
+    }
+  }
+  
+  if(outline){
+    polygon(x = c(coords$x1, head_coords$x, rev(coords$x2)), 
+            y = c(coords$y1, head_coords$y, rev(coords$y2)), 
+            border = outline_col, xpd = xpd, lwd = outline_lwd)
+  }
+  
+}
+
+colblend <- function(c1, c2, brighten = 0){
+  nc <- (col2rgb(c1) + col2rgb(c2)) / 2
+  nc <- nc + (255-max(nc))*brighten
+  rgb(nc[1], nc[2], nc[3],m=255)
+}
+
 
 NULL
 
