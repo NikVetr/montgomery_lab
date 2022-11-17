@@ -29,16 +29,47 @@ vars <- c(sig = summary(fit)$sigma,
           c =  summary(fit)$coefficients["x2","Estimate"])
 
 #compute the hessian at the MLE 
-#(can also get numerically from stats::optim(hessian=T) or optimx::optimx(hessian=T))
-#cos calculus::hessian() uses a symbolic calclulus library iirc
-hess_mat <- hessian(f = func, var = vars)
+#calculus::hessian() uses a symbolic calclulus library iirc
+hess_mat <- calculus::hessian(f = func, var = vars)
 
-#compare the standard errors you got the normal way (ie analytically, via ols) 
-#to the inverse of the negative rescaled hessian
+#now try the log-likelihood
+loglikelihood_string <- sapply(1:n, function(i) paste0("log(1 / sig / sqrt(2 * pi) * exp(-1/2 * ((", 
+                                                       d$ys[i], "-(a+b*", d$x1[i], "+ c*", d$x2[i], "))/sig)^2))"))
+loglikelihood <- parse(text = paste0(loglikelihood_string, collapse = " + "))
+vars <- c(sig = summary(fit)$sigma, 
+          a =  summary(fit)$coefficients["(Intercept)","Estimate"], 
+          b =  summary(fit)$coefficients["x1","Estimate"],
+          c =  summary(fit)$coefficients["x2","Estimate"])
+hess_mat_ll <- calculus::hessian(f = loglikelihood, var = vars)
+sqrt(diag(solve(-hess_mat_ll)))[-1]
+
+#(can also get numerically from stats::optim(hessian=T) or optimx::optimx(hessian=T), which gets it from numDeriv::hessian())
+ll_func <- function(data, par){
+  sum(dnorm(x = data$ys, mean = par["a"] + par["b"] * data$x1 + par["c"] * data$x2, sd = sqrt(exp(par["d"])), log = T))
+}
+par_init <- setNames(rnorm(4), c("a", "b", "c", "d"))
+opt_out <- optim(par = par_init, fn = ll_func, data = d, method = c('L-BFGS-B'), hessian=T, control = list(fnscale=-1))
+sqrt(diag(solve(-opt_out$hessian * (n - 3) / n))) 
+#the n-3 thing is cos we estimate sd w/ optim but not elsewhere
+#see https://stats.stackexchange.com/questions/222233/residual-standard-error-difference-between-optim-and-glm
+
+#####################################################################################
+### compare the standard errors you got the normal way (ie analytically, via ols) ###
+#####################################################################################
+
+#from ols
 summary(fit)$coefficients[,"Std. Error"]
+
+#to the inverse of the negative rescaled hessian
 sqrt(diag(solve(-hess_mat / prod(dnorm(x = d$ys, 
                                        mean = vars["a"] + vars["b"] * d$x1 + vars["c"] * d$x2,
                                        sd = vars["sig"])))))[-1]
+
+#or more easily from the ll
+sqrt(diag(solve(-hess_mat_ll)))[-1]
+
+#compare to numerical result
+sqrt(diag(solve(-opt_out$hessian * (n - 3) / n)))
 
 #bada bing bada boom you can now use these for hypothesis testing same as you would anything else
 summary(fit)$coefficients[,"Pr(>|t|)"]

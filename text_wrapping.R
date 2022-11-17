@@ -141,9 +141,10 @@ put_words_on_lines <- function(data, par){
 text_wrapped_words <- function(txt, rect_coords, optimal_word_placement_inf, justified = F, str_height_lower_start_ratio = 0, 
                                str_width_lefter_start_ratio = 0, rect_rescaling_ratio = 1, col = "black", multicolor_words = F, cols_list, ...){
   
+  ws_height <- optimal_word_placement_inf$vertical_space - optimal_word_placement_inf$vertical_space_noWS
   cex <- optimal_word_placement_inf$cex
   curr_x <- rect_coords$x0 - abs(rect_coords$x0 - rect_coords$x1) * str_width_lefter_start_ratio
-  curr_y <- rect_coords$y0 - optimal_word_placement_inf$vertical_space_noWS * (0.5 + str_height_lower_start_ratio)
+  curr_y <- rect_coords$y0 - optimal_word_placement_inf$vertical_space_noWS * (1 + str_height_lower_start_ratio) / 2
   nlines <- length(optimal_word_placement_inf$words_on_lines)
   strwidths_plotting <- strwidth(txt) * cex
   space_left_on_lines <- sapply(1:length(optimal_word_placement_inf$words_on_lines), function(linei)
@@ -164,16 +165,20 @@ text_wrapped_words <- function(txt, rect_coords, optimal_word_placement_inf, jus
                  strheight(word_expression)) * cex
       etop <- (strheight(latex2exp::TeX(gsub("\\^", "a", word_to_write))) - 
                  strheight(word_expression)) * cex
-      adj_ledding <- ifelse(etop < -1E-6, ebot, ebot / 2 + etop / 2)
+      adj_ledding <- ifelse(etop < -1E-6, ebot / 2 - etop / 2, ebot / 2)
+      
+      print(paste0(linei, ", ", wordi, ": top = ", etop, ", bot = ", ebot))
+      word_to_write <- word_expression
       
       if(multicolor_words){
         text_cols(x = curr_x, y = curr_y + adj_ledding, cex = cex,
                   string = word_to_write, pos = 4, cols = cols_list[[words_written]])
       } else {
+        abline(h=curr_y)
         text2(x = curr_x, y = curr_y + adj_ledding, cex = cex,
              labels = word_to_write, pos = 4, col = col, drect = T)
       }
-      if(justified){
+      if(justified & (linei != nlines)){
         curr_x <- curr_x + strwidth(word_to_write) * cex + justified_space_between_words[linei]
       } else {
         curr_x <- curr_x + strwidth(word_to_write) * cex + optimal_word_placement_inf$space_width_min  
@@ -181,15 +186,17 @@ text_wrapped_words <- function(txt, rect_coords, optimal_word_placement_inf, jus
       
     }
     curr_x <- rect_coords$x0 - abs(rect_coords$x0 - rect_coords$x1) * str_width_lefter_start_ratio
-    curr_y <- rect_coords$y0 - optimal_word_placement_inf$vertical_space * str_height_lower_start_ratio - optimal_word_placement_inf$vertical_space * linei
+    curr_y <- curr_y - optimal_word_placement_inf$vertical_space * (1 + str_height_lower_start_ratio)
   }
   
 }
 
 #specify data
-txt <- sample(replace = T, size = 80, x = c("Akr1c19" , "Aldh1a2" , "Aqp1" , "Arhgef25" , "B4galt4" , "C1qtnf6" , "C1qtnf6" , "Dtx3" , 
+set.seed(1)
+txt <- sample(replace = T, size = 80, x = c("Akr1c1$^2_i$9" , "Aldh1$_a$2" , "Aqp1" , "Arh$^2$ge$_f$25" , "B4galt4" , "C1qtnf6" , "C1qtnf6" , "Dtx3" , 
          "Dtx3" , "Fbln2" , "Fbn1" , "Gatm" , "Gls" , "Gprc5b" , "LOC100910255" , "Lox" , "Lox" , 
          "Ltbp3" , "Ndrg4" , "Pdlim7" , "Sparc" , "Sparc"))
+
 rect_coords <- list(x0=0.275, x1=1.5195, y0 = 2.751, y1 = 0.11547)
 
 #perform analysis
@@ -199,7 +206,7 @@ optimal_word_placement_inf <- find_optimal_cex_and_lines(txt = txt, rect_coords 
 plot(1,1,xlim = c(0,2), ylim = c(0,3), col = "white", xaxt = "n", yaxt = "n", frame.plot = FALSE, xlab = "", ylab = "")
 rect(xleft = rect_coords$x0, ybottom = rect_coords$y0, xright = rect_coords$x1, ytop = rect_coords$y1, lwd = 1, col = "green")
 # par(xpd = NA)
-text_wrapped_words(txt, rect_coords, optimal_word_placement_inf, justified = T, col = "red", 
+text_wrapped_words(txt, rect_coords, optimal_word_placement_inf, justified = F, col = "red", 
                    str_width_lefter_start_ratio = 0)
 
 plot_col_version <- F
