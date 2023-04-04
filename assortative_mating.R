@@ -1,12 +1,15 @@
 #functions
 logit <- function(p) log(p / (1-p))
 invlogit <- function(x){ out <- exp(x) / (1 + exp(x)); ifelse(is.na(out), 1, out) }
+softmax <- function(x) exp(x) / sum(exp(x))
 
 #set simulation parameters
-n_indiv <- 1000
-logit_scale <- 1
-n_loci <- 10
-noise_var <- n_loci * 1
+n_indiv <- 200
+logit_scale_matches <- 2
+softmax_scale_selection <- 0
+n_loci <- 2
+noise_var_y <- n_loci * 1
+noise_var_z <- n_loci * 1
 ngen <- 100
 p.t0 <- rep(0.5, n_loci)
 
@@ -17,9 +20,14 @@ x.t0 <- lapply(1:n_loci, function(li) cbind(
 ))
 
 #find phenotype values
-b <- rep(1, n_loci)
+b_y <- rep(1, n_loci)
+b_y <- rnorm(n_loci); b_y <- b_y / sqrt(sum(b_y^2)) * n_loci #effects for the mating trait
+b_z <- rnorm(n_loci); b_z <- b_z / sqrt(sum(b_z^2)) * n_loci #effects for the mating trait
+h2 <- sum(p.t0 * (1-p.t0) * 2 * b_y^2) / (sum(p.t0 * (1-p.t0) * 2 * b_y^2) + noise_var_y)
 y <- matrix(NA, nrow = n_indiv, ncol = ngen)
-y[,1] <- Reduce("+", lapply(x.t0, function(xi) apply(xi, 1, sum) * b)) + rnorm(n_indiv, sd = sqrt(noise_var))
+z <- matrix(NA, nrow = n_indiv, ncol = ngen)
+y[,1] <- Reduce("+", lapply(seq_along(x.t0), function(xi) apply(x.t0[[xi]], 1, sum) * b_y[xi])) + rnorm(n_indiv, sd = sqrt(noise_var_y))
+z[,1] <- Reduce("+", lapply(seq_along(x.t0), function(xi) apply(x.t0[[xi]], 1, sum) * b_z[xi])) + rnorm(n_indiv, sd = sqrt(noise_var_z))
 x <- lapply(1:ngen, function(i) x.t0)
 
 gen_i <- 2
@@ -36,7 +44,7 @@ for(gen_i in 2:ngen){
     propswap <- sample(1:(n_indiv/2), 2, replace = F)
     currdist <- dy[matches[propswap[1],1], matches[propswap[1],2]] + dy[matches[propswap[2],1], matches[propswap[2],2]]
     propdist <- dy[matches[propswap[1],1], matches[propswap[2],2]] + dy[matches[propswap[1],2], matches[propswap[2],1]]
-    prob_swap <- invlogit((currdist - propdist) * logit_scale)
+    prob_swap <- invlogit((currdist - propdist) * logit_scale_matches)
     swap <- sample(c(T,F), 1, prob = c(prob_swap, 1-prob_swap))
     if(swap){
       foo <- matches[propswap[1],1]
@@ -48,24 +56,36 @@ for(gen_i in 2:ngen){
   #check average distance for debugging
   mean(apply(matches, 1, function(xi) dy[xi[1], xi[2]]))
   
-  #new generation
+  #match future children with current parents to represent selection
+  child_pis <- rep(1:nrow(matches), each = 2) #0 reproductive variance
+  child_pis <- sample(1:nrow(matches), size = n_indiv, replace = T) #uniform sampling variance
+  child_pis <- sample(1:nrow(matches), size = n_indiv, 
+                      prob = softmax(apply(matches, 1, function(xi) mean(z[xi,gen_i-1])) * 
+                                       softmax_scale_selection),
+                      replace = T) #variance propto parental midpoint y
+  
   x[[gen_i]] <- lapply(1:n_loci, function(li){
-    gametes <- t(apply(x[[gen_i-1]][[li]], 1, sample, replace = T))
-    kids <- do.call(rbind, apply(matches, 1, function(mi) 
-                      rbind(c(gametes[mi[1], 1], gametes[mi[2], 1]), 
-                            c(gametes[mi[1], 2], gametes[mi[2], 2])), 
-                      simplify = F))
+    kids <- do.call(rbind, lapply(child_pis, function(mii){ 
+      mi <- matches[mii,]
+      cbind(sample(x[[gen_i-1]][[li]][mi[1],], 1, replace = T),
+            sample(x[[gen_i-1]][[li]][mi[2],], 1, replace = T))
+    }))
   })
   
   #new gen phenotypes
-  y[,gen_i] <- Reduce("+", lapply(x[[gen_i]], function(xi) apply(xi, 1, sum) * b)) + rnorm(n_indiv, sd = sqrt(noise_var))
+  y[,gen_i] <- Reduce("+", lapply(seq_along(x[[gen_i]]), function(xi) apply(x[[gen_i]][[xi]], 1, sum) * b_y[xi])) + rnorm(n_indiv, sd = sqrt(noise_var_y))
+  z[,gen_i] <- Reduce("+", lapply(seq_along(x[[gen_i]]), function(xi) apply(x[[gen_i]][[xi]], 1, sum) * b_z[xi])) + rnorm(n_indiv, sd = sqrt(noise_var_z))
+  
+  #simulate mutations
+  
   
 }
 
 corrs_genotypes <- sapply(1:ngen, function(gen_i){
-  cor(apply(x[[gen_i]][[1]], 1, sum), 
-      apply(x[[gen_i]][[2]], 1, sum))
+  suppressWarnings(cor(apply(x[[gen_i]][[1]], 1, sum), 
+      apply(x[[gen_i]][[2]], 1, sum)))
 }) #or do ld score D = p(AB) - P(A)P(B)
+corrs_genotypes[is.na(corrs_genotypes)] <- 0
 
 D <- sapply(1:ngen, function(gen_i){
   D_unnorm <- (mean(x[[gen_i]][[1]][,1] + x[[gen_i]][[2]][,1] == 2) - mean(x[[gen_i]][[1]][,1]) * mean(x[[gen_i]][[2]][,1]) +
@@ -81,6 +101,8 @@ D <- sapply(1:ngen, function(gen_i){
   }
   D_norm
 })
+D[is.na(D)] <- 0
+
 
 afreq <- t(sapply(1:ngen, function(gen_i){
   sapply(1:n_loci, function(li) mean(x[[gen_i]][[li]]))
@@ -92,8 +114,8 @@ plot(1:ngen, corrs_genotypes, type = "l", lwd = 2, ylim = c(-0.1,1),
      xlab = "# of Generation", ylab = "Value of Statistic",
      main = latex2exp::TeX(paste0(ngen, " generations of ", n_indiv, " individuals, ", 
                                   n_loci, " independent loci, ", 
-                                  "logit_scale = ", logit_scale, 
-                                  ", $h^2_{t_0}$ = ", round(sum(p.t0 * (1-p.t0) * 2 * b^2) / (sum(p.t0 * (1-p.t0) * 2 * b^2) + noise_var), 2))))
+                                  "logit_scale_matches = ", logit_scale_matches, 
+                                  ", $h^2_{t_0}$ = ", round(h2, 2))))
 lines(1:ngen, D, col = "grey", lwd = 2)
 lines(1:ngen, afreq[,1], col = "red")
 lines(1:ngen, afreq[,2], col = "blue")
