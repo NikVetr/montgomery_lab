@@ -1,7 +1,11 @@
 #libraries
 library(parallel)
+library(mvtnorm)
 
-#functions
+#### load functions ####
+source(file = "/Volumes/2TB_External/MoTrPAC_Complex_Traits/scripts/deg-trait_functions.R")
+
+#custom functions for this script
 mcprint <- function(...){
   system(sprintf('echo "%s"', paste0(..., collapse="")))
 }
@@ -23,9 +27,9 @@ pbivnorm_infs <- function(upper1, upper2, rhos){
 }
 
 #set high-level simulation parameters
-n <- 1E3 #number of individuals
-ncol <- 20 #number of columns, e.g. hobbies
-nrow <- 1 #number of rows, e.g. subjects
+n <- 1E4 #number of individuals
+ncol <- 100 #number of columns, e.g. hobbies
+nrow <- 2 #number of rows, e.g. subjects
 
 #sample a correlation matrix for columns / hobbies 'rcol' with some block structure
 nblocks <- 20 
@@ -70,7 +74,7 @@ simulate_hits <- function(nrowhits, rcol){
   return(list(y = y, colhits = colhits, rowhits = rowhits))
 }
 
-prop_teachers <- "1 / 4"
+prop_teachers <- "1 / 500"
 nbeta <- 1E3
 bp <- c(1,1)
 nrowhits <- round(n * eval(parse(text=prop_teachers))) #number of individuals in row, e.g. teachers in subject
@@ -86,13 +90,30 @@ MLE_diffs_in_prop <- do.call(rbind, mclapply(1:5E3, function(i) {
 }, mc.cores = 12))
 cor_among_diffs <- cor(MLE_diffs_in_prop)
 
+#### plot output ####
+
+#hobby version
 plot(cor_among_diffs[upper.tri(cor_among_diffs)], rcol[upper.tri(rcol)], xlim = c(-1,1), ylim = c(-1,1),
-     xlab = "pairwise hobby_i x hobby_j correlations among posterior means for differences in probability\n of hits (probit-scale) between two schools computed across independent simulations",
+     xlab = paste0("pairwise hobby_i x hobby_j correlations among posterior means for differences in probability\n",
+                   "of hits (probit-scale) between two schools computed across independent simulations"),
      ylab = "true correlation between hobby liabilities", 
-     main = paste0("relationship when ", prop_teachers, " of ", n," individuals are teachers,\npriors on Pr(hit) in each group were Beta(", bp[1], ", ", bp[2], ")s"), 
+     main = paste0("relationship when ", prop_teachers, " of ", n," individuals are teachers,\n",
+                   "priors on Pr(hit) in each group were Beta(", bp[1], ", ", bp[2], ")s"), 
      pch = 19, col = adjustcolor(1, 0.5))
 abline(0,1, lty = 2, lwd = 2, col = 2)
 legend(x = "topleft", legend = c("1-to-1 line", "pairwise correlation between hobbies"), lty = c(2, NA), lwd = c(2, NA), col = c(2, adjustcolor(1, 0.5)), pch = c(NA, 19))
+
+#bio version
+plot(cor_among_diffs[upper.tri(cor_among_diffs)], rcol[upper.tri(rcol)], xlim = c(-1,1), ylim = c(-1,1),
+     xlab = paste0("pairwise trait_i x trait_j correlations among posterior means for differences in probability\n",
+                   "of hits (probit-scale) between two tissues computed across independent simulations"),
+     ylab = "correlation between trait liabilities", 
+     main = paste0("relationship when ", prop_teachers, " of ", n," genes are DEGs,\n",
+                   "priors on Pr(hit) in each group were Beta(", bp[1], ", ", bp[2], ")s"), 
+     pch = 19, col = adjustcolor(1, 0.5))
+abline(0,1, lty = 2, lwd = 2, col = 2)
+legend(x = "topleft", legend = c("1-to-1 line", "pairwise correlation between traits"), lty = c(2, NA), lwd = c(2, NA), col = c(2, adjustcolor(1, 0.5)), pch = c(NA, 19))
+
 
 #estimate bivariate correlations in a single set of outcomes
 y <- simulate_hits(nrowhits, rcol)$colhits
