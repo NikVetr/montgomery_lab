@@ -259,7 +259,8 @@ unsquish_middle_p <- function(p,f) invlogit(logit(p)/f)
 # unsquish_middle_x <- function(x,f) (f^(abs(x))-1)*sign(x)
 squish_middle_x <- function(x,f) asinh(x*f)
 unsquish_middle_x <- function(x,f) sinh(x)/f
-redistribute <- function(x, incr){
+redistribute <- function(x, incr, na.rm = T){
+  if(na.rm){x <- x[!is.na(x)]}
   new_x <- seq(from = min(x), length.out = length(x), by = incr)[rank(x)]
   new_x - max(new_x) + max(x)
 }

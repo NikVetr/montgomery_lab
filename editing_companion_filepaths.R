@@ -117,7 +117,7 @@ extract_paste0 <- function(txt){
 }
 
 #get filepaths loaded
-script_dir <- "/Volumes/2TB_External/MoTrPAC_Complex_Traits/scripts/"
+script_dir <- "/Volumes/2TB_External/MoTrPAC_Complex_Traits/scripts_local-paths/"
 scripts <- paste0(script_dir, list.files(script_dir, recursive = T))
 
 root_dirs <- c("~/data/smontgom/",
