@@ -29,7 +29,7 @@ remove_tb <- function(x, replacement){
   remove_top(remove_bottom(x, replacement), replacement)
 }
 
-text3 <- function(x, y, pos = NULL, cex = 1, labels = NULL, drect = F, col = 1, replacement = "a", ...){
+text3 <- function(x, y, pos = NULL, cex = 1, labels = NULL, drect = F, dline = F, col = 1, replacement = "a", ...){
   
   #convert text label to expression
   if(all(class(labels) == "character")){
@@ -73,7 +73,9 @@ text3 <- function(x, y, pos = NULL, cex = 1, labels = NULL, drect = F, col = 1, 
          xright = adj_x + strw / 2, 
          ybottom = adj_y - strh / 2 + adj_ledding, 
          ytop = adj_y + strh / 2 + adj_ledding, border = col)
-    abline(h=y - strheight(latex2exp::TeX("GIs"), cex = cex) / 2, lwd = 0.5)
+  }
+  if(dline){
+    abline(h=y - strheight(latex2exp::TeX("GIs"), cex = cex) / 2, lwd = 0.5)  
   }
 }
 
@@ -81,7 +83,9 @@ text3 <- function(x, y, pos = NULL, cex = 1, labels = NULL, drect = F, col = 1, 
 text_cols <- function(string, cols, x, y, cex = 1, ...){
   for(char_i in 1:nchar(string)){
     txt_exploded <- c(substr(string, 1, char_i-1), substr(string, char_i, char_i), substr(string, char_i+1, nchar(string)))
-    text2(x = x, y = y, labels = bquote(phantom(.(txt_exploded[1])) * .(txt_exploded[2]) * phantom(.(txt_exploded[3]))), col = cols[char_i], cex = cex, ...)
+    text2(x = x, y = y, #text3(x = x, y = y,  
+          labels = bquote(phantom(.(txt_exploded[1])) * .(txt_exploded[2]) * phantom(.(txt_exploded[3]))), 
+          col = cols[char_i], cex = cex, ...)
   }
 }
 
@@ -247,7 +251,6 @@ text_wrapped_words <- function(txt, rect_coords, optimal_word_placement_inf, jus
       #adjust for sticky-outy bits
       word_expression <- correct_l2xp_vec(word_to_write)
       
-      
       if(multicolor_words){
         text_cols(x = curr_x, y = curr_y, cex = cex,
                   string = word_expression, pos = 4, cols = cols_list[[words_written]])
@@ -308,6 +311,7 @@ string_to_tokens <- function(txt_string){
       return(integer(0))
     }
   }))
+  
   if(length(math_pairs) != 0){
     math_pairs <- data.frame(cbind(matrix(math_pairs$token, ncol = 2, byrow = T), 
                                    matrix(math_pairs$math_i, ncol = 2, byrow = T)))
@@ -421,23 +425,25 @@ correct_l2xp_vec <- function(x){
   new_out
 }
 
-#create plot
+#### create plot #### 
 plot(1,1,xlim = c(0,2), ylim = c(0,3), col = "white", xaxt = "n", yaxt = "n", frame.plot = FALSE, xlab = "", ylab = "")
 abline(h = 0:150/50, col = "lightgrey", lwd = 0.5)
 
 #specify data
 # set.seed(1)
-txt <- sample(replace = T, size = 40, x = c("Akr1c1$^2_i$9" , "Aldh1$_a$2" , "Aqp1" , "Arh$^2$ge$_f$25" , "B4galt4" , "C1qtnf6" , "C1qtnf6" , "Dtx3" ,
+txt <- sample(replace = T, size = 20, x = c("Akr1c1$^2_i$9" , "Aldh1$_a$2" , "Aqp1" , "Arh$^2$ge$_f$25" , "B4galt4" , "C1qtnf6" , "C1qtnf6" , "Dtx3" ,
          "Dtx3" , "Fbln2" , "Fbn1" , "Gatm" , "Gls" , "Gprc5b" , "LOC100910255" , "Lox" , "Lox" ,
          "Ltbp3" , "Ndrg4" , "Pdlim7" , "Sparc" , "Sparc"))
+tokens <- txt
+newlines <- rep(F, length(txt))
 
 #specify alternate data
 txt_string <- "Lorem $ipsum_2$ $dolor_{50}$ si $amet$, \textbf{consectetur \textit{adipiscing} elit}, $sed_1 do$ \textbf{eiusmod tempor incididunt} ut \textbf{\textit{labore et}} dolore amana aliqua."
 tokens <- string_to_tokens(txt_string)
 txt <- tokens$tokens
-strwidth(correct_l2xp_vec(txt))
 newlines <- tokens$newlines
-cbind(tokens$tokens, tokens$newlines)
+# strwidth(correct_l2xp_vec(txt))
+# cbind(tokens$tokens, tokens$newlines)
 
 rect_coords <- list(x0=0.275, x1=1.55, y0 = 2.751, y1 = 0.11547)
 
@@ -447,6 +453,7 @@ optimal_word_placement_inf <- find_optimal_cex_and_lines(txt = txt, rect_coords 
 
 #check plot
 rect(xleft = rect_coords$x0, ybottom = rect_coords$y0, xright = rect_coords$x1, ytop = rect_coords$y1, lwd = 1, col = "green")
+
 # par(xpd = NA)
 text_wrapped_words(txt, rect_coords, optimal_word_placement_inf, justified = F, col = "red", 
                    str_width_lefter_start_ratio = 0, vertically_justified = F) #TODO justification is screwed up :/
