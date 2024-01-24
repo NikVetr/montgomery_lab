@@ -1,6 +1,59 @@
 library(dplyr)
+library(cmdstanr)
+library(posterior)
 
-stan_code <- readLines("~/repos/egtex-ase/Stan/models/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.stan")
+stan_code <- readLines("~/repos/egtex-ase/Stan/models/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.stan") #load stan model spec
+load("~/repos/egtex-ase/Stan/output/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.cmdStanR.fit") #load Stan output
+samps <- data.frame(as_draws_df(out$draws()))
+#load input files json
+
+subset_samps <- function(var_name, samps) {
+  # Regex pattern to match either exact variable name or name followed by indices
+  pattern <- paste0("^(", var_name, "(\\.[0-9]+)*\\.|", var_name, ")$")
+  matched_cols <- grep(pattern, colnames(samps), value = TRUE)
+  return(samps[, matched_cols, drop = F])
+}
+
+munge_samps <- function(var_name, df) {
+  # Check if the data frame has only one row
+  if (nrow(df) == 1) {
+    # Process a single row to construct the appropriate data structure
+    # Determine the structure of the data (scalar, vector, matrix, or array)
+    col_names <- colnames(df)
+    col_names_without_var <- gsub(paste0("^", var_name, "\\."), "", col_names)
+    if (all(grepl("\\.\\d+\\.", col_names))) {
+      # Handle vectors, matrices, and arrays
+      # Extract indices from column names
+      indices <- lapply(strsplit(col_names_without_var, "\\."), function(x) as.numeric(x))
+      
+      # Determine if it's a vector, matrix, or array
+      max_dims <- sapply(indices, length)
+      if (all(max_dims == 1)) {
+        # Vector
+        return(unlist(df))
+      } else if (all(max_dims == 2)) {
+        # Matrix
+        dim_order <- do.call(rbind, indices)
+        mat <- matrix(NA, nrow = max(dim_order[,1]), ncol = max(dim_order[,2]))
+        mat[cbind(dim_order[,1], dim_order[,2])] <- unlist(df)
+        return(mat)
+      } else {
+        # Array (higher dimensions)
+        array_dims <- apply(do.call(rbind, indices), 2, max)
+        arr <- array(NA, dim = array_dims)
+        array_indices <- do.call(expand.grid, lapply(array_dims, seq_len))
+        arr[as.matrix(array_indices)] <- unlist(df)
+        return(arr)
+      }
+    } else {
+      # Scalar or simple vector
+      return(unlist(df))
+    }
+  } else {
+    # Recursively apply to each row
+    return(lapply(seq_len(nrow(df)), function(i) munge_samps(var_name = var_name, df = df[i, , drop = FALSE])))
+  }
+}
 
 clean_stan <- function(stan_code) {
 
@@ -457,52 +510,232 @@ parsed_lines <- bind_rows(parsed_lines)
 
 #### interpreting lines ####
 
-interpret_assignment <- function(line, block_name, dat, samps) {
-  # Placeholder for interpret_assignment function
-  return("interpret_assignment not yet implemented")
+interpret_assignment <- function(line) {
+  # Construct the LHS of the assignment
+  lhs <- line$lhs_name
+  if (nchar(line$lhs_index) > 0) {
+    lhs <- paste0(lhs, "[", line$lhs_index, "]")
+  }
+  
+  # Process the RHS of the assignment
+  rhs <- interpret_operation(line$rhs_expression)
+  
+  # Combine LHS and RHS to form the assignment statement
+  return(paste0(lhs, " <- ", rhs))
 }
 
-interpret_operation <- function(line, block_name, dat, samps) {
-  # Placeholder for interpret_operation function
-  return("interpret_operation not yet implemented")
+
+interpret_operation <- function(stan_expression) {
+  # Replace specific Stan functions with equivalent R functions or code
+  # Example: Implementing inv_logit
+  stan_expression <- gsub("inv_logit\\(", "plogis(", stan_expression)
+  
+  # Handle element-wise operations (*, /, +, -) - In R, these are by default element-wise
+  # Stan's element-wise operations (e.g., .*) are the same as R's default, so we can remove the '.'
+  stan_expression <- gsub("\\.\\*", "*", stan_expression)
+  stan_expression <- gsub("\\./", "/", stan_expression)
+  stan_expression <- gsub("\\.\\+", "+", stan_expression)
+  stan_expression <- gsub("\\.-", "-", stan_expression)
+  
+  # Ignore certain functions if needed, e.g., to_vector (if it's redundant in R)
+  # This can be a no-op if to_vector has no side effects in R context
+  stan_expression <- gsub("to_vector\\(", "(", stan_expression)
+  
+  # Return the translated stan_expression
+  return(stan_expression)
 }
 
-interpret_loop <- function(line, block_name, dat, samps) {
-  # Placeholder for interpret_loop function
-  return("interpret_loop not yet implemented")
+
+interpret_loop <- function(line) {
+  if (line$loop_action == "open") {
+    # Construct the loop header
+    loop_variable <- line$loop_variable
+    loop_range <- line$loop_range
+    loop_header <- paste0("for (", loop_variable, " in ", loop_range, ") {")
+    return(loop_header)
+  } else if (line$loop_action == "close") {
+    # Close the loop
+    return("}")
+  } else {
+    # Handle unexpected cases
+    return("# Unexpected loop structure")
+  }
 }
 
-interpret_sampling <- function(line, block_name, dat, samps) {
-  # Placeholder for interpret_sampling function
-  return("interpret_sampling not yet implemented")
+
+interpret_sampling <- function(line, dat, samps, sample_index = 1, post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA) {
+  # LHS of the sampling statement
+  lhs <- line$var_name
+  
+  # Check if the LHS is in the data block and handle accordingly
+  if (lhs %in% names(dat) && !post_pred_sim) {
+    if (sim) {
+      # Sample from the specified distribution (prior predictive simulation)
+      return(paste0(lhs, " <- ", generate_sampling_code(line, sim)))
+    } else {
+      # Find the density or mass for the parameter in the specified distribution
+      return(paste0(lhs, " <- ", generate_density_code(line, dat)))
+    }
+  } else {
+    if (post_pred_sim) {
+      # Posterior predictive simulation
+      sampled_param <- munge_samps(line$var_name, subset_samps(line$var_name, samps[sample_index, , drop = FALSE]))
+      return(paste0(lhs, " <- ", sampled_param))
+    } else {
+      # Prior predictive simulation
+      return(paste0(lhs, " <- ", generate_sampling_code(line, sim)))
+    }
+  }
 }
 
-interpret_declaration <- function(line, block_name, dat, samps) {
-  if (block_name == "parameters") {
+generate_sampling_code <- function(line) {
+  distribution <- line$distribution
+  parameters <- line$parameters
+  
+  # Mapping Stan distributions to R functions
+  distribution_map <- list(
+    std_normal = "rnorm(n = 1, mean = 0, sd = 1)",
+    normal = "rnorm(n = 1, mean = param1, sd = param2)",  # Assuming 'mean, sd' parameterization
+    beta = "rbeta(n = 1, shape1 = param1, shape2 = param2)",
+    binomial = "rbinom(n = 1, size = param1, prob = param2)",
+    gamma = "rgamma(n = 1, shape = param1, rate = param2)",  # Assuming 'shape, rate' parameterization
+    student_t = "rt(n = 1, df = param1, ncp = param2)",
+    double_exponential = "rlaplace(n = 1, location = param1, scale = param2)",
+    exponential = "rexp(n = 1, rate = param1)",
+    lognormal = "rlnorm(n = 1, meanlog = param1, sdlog = param2)",
+    chi_square = "rchisq(n = 1, df = param1)",
+    uniform = "runif(n = 1, min = param1, max = param2)",
+    poisson = "rpois(n = 1, lambda = param1)"
+    # Add other distributions as needed
+  )
+  
+  # Generate R code for sampling
+  r_function <- distribution_map[[distribution]]
+  if (is.null(r_function)) {
+    return(paste("# No R equivalent for", distribution, "distribution"))
+  } else {
+    # Replace placeholders with actual parameters
+    param_names <- paste0("param", seq_along(strsplit(parameters, ",")[[1]]))
+    for (i in seq_along(param_names)) {
+      r_function <- gsub(param_names[i], strsplit(parameters, ",")[[1]][i], r_function)
+    }
+    return(r_function)
+  }
+}
+
+
+generate_density_code <- function(line, dat) {
+  distribution <- line$distribution
+  parameters <- line$parameters
+  var_name <- line$var_name
+  
+  # Mapping Stan distributions to R density/mass functions
+  density_map <- list(
+    normal = "dnorm(x = dat$VAR_NAME, mean = param1, sd = param2)",
+    beta = "dbeta(x = dat$VAR_NAME, shape1 = param1, shape2 = param2)",
+    binomial = "dbinom(x = dat$VAR_NAME, size = param1, prob = param2)",
+    gamma = "dgamma(x = dat$VAR_NAME, shape = param1, rate = param2)",
+    student_t = "dt(x = dat$VAR_NAME, df = param1, ncp = param2)",
+    double_exponential = "dexp(x = dat$VAR_NAME, rate = param1)",  # Assuming 'rate' parameterization
+    exponential = "dexp(x = dat$VAR_NAME, rate = param1)",
+    lognormal = "dlnorm(x = dat$VAR_NAME, meanlog = param1, sdlog = param2)",
+    chi_square = "dchisq(x = dat$VAR_NAME, df = param1)",
+    uniform = "dunif(x = dat$VAR_NAME, min = param1, max = param2)",
+    poisson = "dpois(x = dat$VAR_NAME, lambda = param1)"
+    # Add other distributions as needed
+  )
+  
+  # Generate R code for density/mass calculation
+  r_function <- density_map[[distribution]]
+  if (is.null(r_function)) {
+    return(paste("# No R equivalent for", distribution, "distribution"))
+  } else {
+    # Replace placeholder 'VAR_NAME' with the actual variable name from the data
+    r_function <- gsub("VAR_NAME", var_name, r_function)
+    
+    # Replace placeholders with actual parameters
+    param_names <- paste0("param", seq_along(strsplit(parameters, ",")[[1]]))
+    for (i in seq_along(param_names)) {
+      r_function <- gsub(param_names[i], strsplit(parameters, ",")[[1]][i], r_function)
+    }
+    return(r_function)
+  }
+}
+
+
+
+interpret_declaration <- function(line, dat, samps) {
+  if (line$block_name == "parameters") {
     # Read from MCMC samples
     var_name <- line$var_name
     return(paste0(var_name, " <- subset_samps(include = '", var_name, "', samps = samps)"))
-  } else if (block_name == "data") {
+  } else if (line$block_name == "data") {
     # Read from input data
     var_name <- line$var_name
     return(paste0(var_name, " <- dat$", var_name))
   } else {
     # Initialize the variable in R
     var_name <- line$var_name
-    return(paste0(var_name, " <- NULL  # Initialize variable"))
+    declaration_type <- line$declaration_type
+    dimensions <- line$dimensions
+    
+    # Handle different declaration types
+    if (declaration_type == "int" || declaration_type == "real") {
+      if (dimensions == "1") {
+        # Scalar
+        return(paste0(var_name, " <- NA"))
+      } else {
+        # Vector
+        return(paste0(var_name, " <- rep(NA, ", dimensions, ")"))
+      }
+    } else if (declaration_type == "vector") {
+      # Vector
+      return(paste0(var_name, " <- rep(NA, ", dimensions, ")"))
+    } else if (declaration_type == "matrix") {
+      # Matrix
+      matrix_dims <- strsplit(dimensions, ",")[[1]]
+      return(paste0(var_name, " <- matrix(NA, nrow = ", matrix_dims[1], ", ncol = ", matrix_dims[2], ")"))
+    } else if (declaration_type == "array") {
+      # Array with more than 2 dimensions
+      array_dims <- paste("dim = c(", dimensions, ")", sep = "")
+      return(paste0(var_name, " <- array(NA, ", array_dims, ")"))
+    } else {
+      # Default case for unknown types
+      return(paste0("# Unknown type for ", var_name))
+    }
   }
 }
 
 interpret_lines <- function(line, dat, samps) {
   switch(line$type,
-         "declaration" = interpret_declaration(line, line$block_name, dat, samps),
-         "assignment" = interpret_assignment(line, line$block_name, dat, samps),
-         "operation" = interpret_operation(line, line$block_name, dat, samps),
-         "loop" = interpret_loop(line, line$block_name, dat, samps),
-         "sampling" = interpret_sampling(line, line$block_name, dat, samps),
+         "declaration" = interpret_declaration(line, dat, samps),
+         "assignment" = interpret_assignment(line, dat, samps),
+         "operation" = interpret_operation(line, dat, samps),
+         "loop" = interpret_loop(line, dat, samps),
+         "sampling" = interpret_sampling(line, dat, samps),
          "Unknown type")
 }
 
 # Example usage
 processed_code <- lapply(parsed_lines, interpret_lines, dat, samps)
 
+line <- parsed_lines[1,]
+
+dcls <- parsed_lines[parsed_lines$type == "declaration",]
+sapply(1:nrow(dcls), function(i) cbind(dcls$line[i], dcls$block_name[i], interpret_declaration(dcls[i,], dat, samps)))
+
+
+asms <- parsed_lines[parsed_lines$type == "assignment",]
+sapply(1:nrow(asms), function(i) cbind(asms$line[i], asms$block_name[i], interpret_assignment(asms[i,])))
+
+
+loops <- parsed_lines[parsed_lines$type == "loop",]
+sapply(1:nrow(loops), function(i) cbind(loops$line[i], loops$block_name[i], interpret_loop(loops[i,])))
+
+sss <- parsed_lines[parsed_lines$type == "sampling",]
+head(sss[,!apply(apply(sss,2,is.na), 2, all)])
+sapply(1:nrow(sss), function(i){print(i); cbind(sss$line[i], sss$block_name[i], 
+                                      interpret_sampling(sss[i,], dat, samps, 
+                                                         sample_index = 1, 
+                                                         post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA))
+  })
