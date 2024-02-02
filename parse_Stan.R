@@ -5,7 +5,8 @@ library(posterior)
 stan_code <- readLines("~/repos/egtex-ase/Stan/models/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.stan") #load stan model spec
 load("~/repos/egtex-ase/Stan/output/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.cmdStanR.fit") #load Stan output
 samps <- data.frame(as_draws_df(out$draws()))
-#load input files json
+dat <- jsonlite::fromJSON("~/repos/egtex-ase/Stan/models/beta-binomial-joint-conc-loc-indiv-pointmix-noncentered.json")
+
 
 subset_samps <- function(var_name, samps) {
   # Regex pattern to match either exact variable name or name followed by indices
@@ -56,7 +57,7 @@ munge_samps <- function(var_name, df) {
 }
 
 clean_stan <- function(stan_code) {
-
+  
   # Regular expressions for detecting types of lines
   declaration_regex <- "^\\s*(int|real|vector|row_vector|matrix|array)"
   lpmf_lpdf_regex <- "_lp(mf|df)\\s*\\("
@@ -103,8 +104,8 @@ clean_stan <- function(stan_code) {
     for(i in 1:length(straggling_open_bracket_inds)){
       current_line <- (straggling_open_bracket_inds[i] + n_lines_inserted)
       insert_lines <- trimws(strsplit(x = lines[current_line], 
-                               split = paste0("(?=", "{", ")"), 
-                               perl = TRUE)[[1]])
+                                      split = paste0("(?=", "{", ")"), 
+                                      perl = TRUE)[[1]])
       
       if(insert_lines[1] == "{"){
         insert_lines <- c("", insert_lines)
@@ -117,8 +118,8 @@ clean_stan <- function(stan_code) {
       }
       
       insert_lines <- trimws(paste(insert_lines[which(insert_lines == "{")-1],
-             insert_lines[which(insert_lines == "{")]
-             ))
+                                   insert_lines[which(insert_lines == "{")]
+      ))
       
       if(last_bit_exists){
         insert_lines <- c(insert_lines, last_bit)
@@ -189,7 +190,7 @@ parse_stan_blocks <- function(stan_code) {
   
   # Iterate over the lines
   for (line in lines) {
-  
+    
     # Check for block start
     if (grepl(block_regex, line)) {
       current_block <- sub("^\\s*(\\w+(\\s+\\w+)?)\\s*\\{.*", "\\1", line)
@@ -202,7 +203,7 @@ parse_stan_blocks <- function(stan_code) {
       bracket_count <- bracket_count + 
         sum(gregexpr("\\{", line)[[1]] > 0) - 
         sum(gregexpr("\\}", line)[[1]] > 0)
-        
+      
       if (bracket_count == 0) {
         current_block <- NULL
       } else {
@@ -290,7 +291,19 @@ parse_assignment <- function(line) {
   return(list(lhs_name = lhs_name, lhs_index = lhs_index, rhs_expression = rhs_expression))
 }
 
-
+parse_lse <- function(line) {
+  # Regular expression to capture LHS and RHS in 'target += log_sum_exp(...);' statements
+  lse_regex <- "^(\\w+)(\\[.*\\])?\\s*\\+=\\s*log_sum_exp\\((.+)\\);$"
+  
+  if (grepl(lse_regex, line)) {
+    lhs_name <- sub(lse_regex, "\\1", line)
+    lse_argument <- sub(lse_regex, "\\3", line)
+    
+    return(list(lhs_name = lhs_name, lse_argument = lse_argument))
+  }
+  
+  return(list(lhs_name = NA, lse_argument = NA))
+}
 
 parse_operation <- function(expression) {
   # Replace Stan-specific operations with R equivalents
@@ -358,6 +371,7 @@ parse_sampling <- function(line) {
 parse_lpmf_lpdf <- function(line) {
   # Extract the RHS of the assignment
   rhs <- sub(".*=\\s*(.+);", "\\1", line)
+  lhs <- sub("\\s*=.*", "", line)
   
   # Isolate the _lpmf or _lpdf function call
   lpmf_lpdf_call <- regmatches(rhs, regexpr("\\w+_lp(mf|df)\\s*\\([^\\)]+\\)", rhs))
@@ -383,13 +397,14 @@ parse_lpmf_lpdf <- function(line) {
     args <- sub(".*\\(([^|]+)\\s*\\|\\s*(.+)\\)", "\\1,\\2", lpmf_lpdf_call)
     args_split <- strsplit(args, ",")[[1]]
     if (length(args_split) >= 2) {
-      outcome_variable <- args_split[1]
+      outcome_variable <- trimws(args_split[1])
       parameters <- paste(args_split[-1], collapse = ", ")
     }
   }
   
   return(list(distribution = distribution, outcome_variable = outcome_variable, 
-              parameters = parameters, mixture_probability = mixture_probability))
+              parameters = parameters, mixture_probability = mixture_probability,
+              lhs = lhs, rhs = rhs))
 }
 
 
@@ -455,12 +470,15 @@ parse_stan_lines <- function(block_content) {
     if (grepl(declaration_regex, line)) {
       parsed_type <- "declaration"
       parsed_info <- parse_declaration(line)
-    } else if (grepl(target_assignment_regex, line)) {
-      parsed_type <- "sampling_target"
-      parsed_info <- parse_target_assignment(line)
     } else if (grepl(lpmf_lpdf_regex, line)) {
       parsed_type <- "lpmf_lpdf"
       parsed_info <- parse_lpmf_lpdf(line)
+    } else if (grepl("log_sum_exp", line)) {
+      parsed_type <- "log_sum_exp"
+      parsed_info <- parse_lse(line)
+    } else if (grepl(target_assignment_regex, line)) {
+      parsed_type <- "sampling_target"
+      parsed_info <- parse_target_assignment(line)
     } else if (grepl("=", line)) {
       parsed_type <- "assignment"
       parsed_info <- parse_assignment(line)
@@ -493,8 +511,28 @@ parse_stan_lines <- function(block_content) {
                            c(list(line = line, 
                                   type = parsed_type, 
                                   loop_depth = loop_depth - ifelse(parsed_type == "loop" && parsed_info$loop_action == "open", 1, 0)
-                                  ), 
-                             parsed_info))
+                           ), 
+                           parsed_info))
+    
+    line_info
+  }
+  
+  if(any(line_info$type == "loop")){
+    loop_info <- data.frame(open_ind = which(line_info$loop_action == "open"),
+                            close_ind = which(line_info$loop_action == "close"),
+                            loop_var = line_info$loop_variable[which(line_info$loop_action == "open")],
+                            loop_range = line_info$loop_range[which(line_info$loop_action == "open")])
+    
+    for(i in 1:nrow(loop_info)){
+      loop_inds <- (loop_info$open_ind[i]+1):(loop_info$close_ind[i]-1)
+      if(all(is.na(line_info$loop_variable[loop_inds]))){
+        line_info$loop_variable[loop_inds] <- loop_info$loop_var[i]
+        line_info$loop_range[loop_inds] <- loop_info$loop_range[i]
+      } else {
+        line_info$loop_variable[loop_inds] <- paste0(line_info$loop_variable[loop_inds], ", ", loop_info$loop_var[i])
+        line_info$loop_range[loop_inds] <- paste0(line_info$loop_range[loop_inds], ", ", loop_info$loop_range[i])
+      }
+    }
   }
   
   return(line_info)
@@ -505,7 +543,6 @@ parsed_lines <- lapply(setNames(names(parsed_lines), names(parsed_lines)),
                        function(block_name){
                          cbind(parsed_lines[[block_name]], block_name = block_name)
                        })
-
 parsed_lines <- bind_rows(parsed_lines)
 
 #### interpreting lines ####
@@ -564,26 +601,52 @@ interpret_loop <- function(line) {
 
 
 interpret_sampling <- function(line, dat, samps, sample_index = 1, post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA) {
+  
   # LHS of the sampling statement
-  lhs <- line$var_name
+  lhs <- gsub("\\[.*\\]", "", line$var_name)
+  if(is.na(line$var_name)){
+    lhs <- gsub("\\[.*\\]", "", line$outcome_variable)
+  }
   
   # Check if the LHS is in the data block and handle accordingly
-  if (lhs %in% names(dat) && !post_pred_sim) {
+  if (lhs %in% names(dat)) {
     if (sim) {
       # Sample from the specified distribution (prior predictive simulation)
-      return(paste0(lhs, " <- ", generate_sampling_code(line, sim)))
+      return(paste0(lhs, " <- ", generate_sampling_code(line)))
     } else {
       # Find the density or mass for the parameter in the specified distribution
-      return(paste0(lhs, " <- ", generate_density_code(line, dat)))
+      return(paste0(lhs, " <- ", generate_density_code(line)))
     }
+    
   } else {
     if (post_pred_sim) {
+      
       # Posterior predictive simulation
-      sampled_param <- munge_samps(line$var_name, subset_samps(line$var_name, samps[sample_index, , drop = FALSE]))
-      return(paste0(lhs, " <- ", sampled_param))
+      
+      #retrieve sampled param value
+      sampled_param <- munge_samps(line$var_name, 
+                                   subset_samps(line$var_name, samps[sample_index, , drop = FALSE]))
+      
+      # generate appropriate R code
+      if (is.vector(sampled_param)) {
+        # Vector: Use c() to create a vector in R code
+        r_code <- paste0(lhs, " <- c(", paste(sampled_param, collapse = ", "), ")")
+      } else if (is.matrix(sampled_param)) {
+        # Matrix: Use matrix() to create a matrix in R code
+        matrix_values <- paste(sampled_param, collapse = ", ")
+        r_code <- paste0(lhs, " <- matrix(c(", matrix_values, "), nrow = ", nrow(sampled_param), ", ncol = ", ncol(sampled_param), ")")
+      } else if (is.array(sampled_param)) {
+        # Array: More complex, handle as needed
+        r_code <- "# Array assignment not yet implemented"
+      } else {
+        # Scalar or other types
+        r_code <- paste0(lhs, " <- ", sampled_param)
+      }
+      return(r_code)
+      
     } else {
       # Prior predictive simulation
-      return(paste0(lhs, " <- ", generate_sampling_code(line, sim)))
+      return(paste0(lhs, " <- ", generate_sampling_code(line)))
     }
   }
 }
@@ -605,7 +668,8 @@ generate_sampling_code <- function(line) {
     lognormal = "rlnorm(n = 1, meanlog = param1, sdlog = param2)",
     chi_square = "rchisq(n = 1, df = param1)",
     uniform = "runif(n = 1, min = param1, max = param2)",
-    poisson = "rpois(n = 1, lambda = param1)"
+    poisson = "rpois(n = 1, lambda = param1)",
+    beta_binomial = "extraDistr::rbbinom(n = 1, size = param1, alpha = param2, beta = param3)"
     # Add other distributions as needed
   )
   
@@ -641,7 +705,8 @@ generate_density_code <- function(line, dat) {
     lognormal = "dlnorm(x = dat$VAR_NAME, meanlog = param1, sdlog = param2)",
     chi_square = "dchisq(x = dat$VAR_NAME, df = param1)",
     uniform = "dunif(x = dat$VAR_NAME, min = param1, max = param2)",
-    poisson = "dpois(x = dat$VAR_NAME, lambda = param1)"
+    poisson = "dpois(x = dat$VAR_NAME, lambda = param1)",
+    beta_binomial = "extraDistr::dbbinom(x = dat$VAR_NAME, size = param1, alpha = param2, beta = param3)"
     # Add other distributions as needed
   )
   
@@ -650,14 +715,15 @@ generate_density_code <- function(line, dat) {
   if (is.null(r_function)) {
     return(paste("# No R equivalent for", distribution, "distribution"))
   } else {
-    # Replace placeholder 'VAR_NAME' with the actual variable name from the data
-    r_function <- gsub("VAR_NAME", var_name, r_function)
-    
-    # Replace placeholders with actual parameters
+    # Replace placeholder parameters with actual parameters
     param_names <- paste0("param", seq_along(strsplit(parameters, ",")[[1]]))
     for (i in seq_along(param_names)) {
       r_function <- gsub(param_names[i], strsplit(parameters, ",")[[1]][i], r_function)
     }
+    
+    # Replace placeholder random variable name with actual random variable name
+    r_function <- gsub("VAR_NAME", var_name, r_function)
+    
     return(r_function)
   }
 }
@@ -668,7 +734,7 @@ interpret_declaration <- function(line, dat, samps) {
   if (line$block_name == "parameters") {
     # Read from MCMC samples
     var_name <- line$var_name
-    return(paste0(var_name, " <- subset_samps(include = '", var_name, "', samps = samps)"))
+    return(paste0(var_name, " <- subset_samps(var_name = '", var_name, "', samps = samps)"))
   } else if (line$block_name == "data") {
     # Read from input data
     var_name <- line$var_name
@@ -706,36 +772,280 @@ interpret_declaration <- function(line, dat, samps) {
   }
 }
 
-interpret_lines <- function(line, dat, samps) {
+interpret_lpmf_lpdf <- function(line, dat, samps, sample_index = 1, post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA) {
+  sampling_line <- line
+  sampling_line$var_name <- line$outcome_variable
+  
+  
+  if (!is.na(line$mixture_probability)) {
+    
+    # Extract indices from lhs and outcome_variable
+    lhs_var <- gsub("\\[.*\\]", "", line$lhs)
+    lhs_index <- gsub(".*\\[|\\].*", "", line$lhs)
+    outcome_var_index <- gsub(".*\\[|\\].*", "", line$outcome_variable)
+    outcome_base <- gsub("\\[.*\\]", "", line$outcome_variable)
+    outcome_mix_var <- paste0(outcome_base, "_mix")
+    mixture_prob_var <- paste0(outcome_mix_var, "_prob")
+    
+    if(lhs_index == 1){
+      #change lp class to numeric_mixture
+      class_def_code <- "if(!isClass('numeric_mixture')){\n\tsetClass(\n\t\t\"numeric_mixture\",\n\t\tcontains = \"numeric\",\n\t\tslots = c(probabilities = \"numeric\", outcome_var = \"character\")\n\t)\n}\n"
+      
+      # class_set_code <- paste0("class(", lhs_var, ") <- \"numeric_mixture\"\n") #hm this is giving me errors when accessing attributes
+      class_set_code <- paste0(lhs_var, " <- new(\"numeric_mixture\", .Data = ", lhs_var, ", probabilities = numeric(length(", lhs_var, ")), outcome_var = \"", outcome_base, "\")\n\n")
+
+      # outcome_var_code <- paste0(lhs_var, "@outcome_var <- \"", outcome_base, "\"\n\n")
+      outcome_var_code <- ""
+      class_code <- paste0(class_def_code, class_set_code, outcome_var_code)
+    } else {
+      class_code <- ""
+    }
+    
+    # Generate R code for mixture probability and component
+    mixture_prob_code <- interpret_operation(line$mixture_probability)
+    component_code <- interpret_sampling(line = sampling_line, dat, samps, sample_index, post_pred_sim = F, sim = sim, bound_declarations)
+    
+    
+    if(!is.na(line$loop_variable)){
+      numeric_code <- paste0(lhs_var, "[", lhs_index, "] <- ", gsub(paste0(outcome_base, " <- "), "", component_code), "\n")
+      prob_code <- paste0(lhs_var, "@probabilities[", lhs_index, "] <- ", mixture_prob_code, "\n")
+      r_code <- paste0(class_code, numeric_code, prob_code)
+      
+      return(r_code)
+    }
+    
+  }
+    
+    
+    # Initialize mixture lists if both indices are 1
+  #   init_code <- ""
+  #   if (lhs_index == "1") {
+  #     init_code <- paste0("if(", outcome_var_index, " == 1) {\n\t",
+  #                         "  ", outcome_mix_var, " <- replicate(length(", lhs_var, "), ", outcome_base, ", simplify = FALSE)\n\t",
+  #                         "  ", mixture_prob_var, " <- replicate(length(", lhs_var, "), vector('numeric', length(", outcome_base, ")), simplify = FALSE)\n\t",
+  #                         "  ", lhs_var, " <- list(", outcome_mix_var, " = ", outcome_mix_var, ", ", mixture_prob_var, " = ", mixture_prob_var, ")\n\t",
+  #                         "}\n")
+  #   }
+  #   
+  #   # Generate R code for mixture probability and component
+  #   mixture_prob_code <- interpret_operation(line$mixture_probability)
+  #   component_code <- interpret_sampling(line = sampling_line, dat, samps, sample_index, post_pred_sim = F, sim = sim, bound_declarations)
+  #   
+  #   
+  #   # Append new values to the mixture list
+  #   append_code <- paste0(lhs_var, "[[", outcome_mix_var, "]][[", lhs_index, "]][", outcome_var_index,"]", gsub(outcome_base, "", component_code), "\n",
+  #                         lhs_var, "[[", mixture_prob_var, "]][[", lhs_index, "]][", outcome_var_index,"] <- ", mixture_prob_code)
+  #   
+  #   # Combine initialization and appending code
+  #   r_code <- paste(init_code, append_code, sep = "\n")
+  # } else {
+    # Standard sampling interpretation
+    r_code <- interpret_sampling(sampling_line, dat, samps, sample_index, post_pred_sim, sim, bound_declarations)
+  # }
+  
+  return(r_code)
+}
+
+
+interpret_lse <- function(line, dat, samps, sim = TRUE) {
+  
+  if(!is.na(line$loop_variable)){
+    
+    if (sim) {
+        # Sample from the mixture components
+        r_code <- paste0("out[[", line$lse_argument, "@outcome_var]][", line$loop_variable,"] <- ", line$lse_argument, 
+                         "[", "sample(1:", "length(", line$lse_argument, ")", ", 1, prob = ", line$lse_argument, "@probabilities)]\n\n")
+        
+    } else {
+      # Compute weighted average of mixture components
+      r_code <- paste0("out[[", line$lse_argument, "@outcome_var]][", line$loop_variable,"] <- sum(", line$lse_argument, " * ", line$lse_argument, "@probabilities)\n\n")
+      
+    }
+    
+    return(r_code)
+  }
+  
+  # Extract the base variable info for the mixture model
+  # if(is.na(line$loop_variable)){
+  #   r_code_start <- paste0(
+  #     paste0("if(", line$loop_variable, " == 1) {\n\t"),
+  #     paste0("\tbase_var_name <- gsub(pattern = \"_mix\", replacement = \"\", x = names(", line$lse_argument, ")[[1]])\n\t"),
+  #     paste0("\tmix_var_name <- ", "paste0(base_var, \"_mix\")\n\t"),
+  #     paste0("\tmix_prob_name <- ", "paste0(base_var, \"_mix_prob\")\n\t"),
+  #     paste0("\tn_mix_components <- length(", line$lse_argument, "[[mix_var_name]])\n\t"),
+  #     paste0("\tmix_dist_out <- get(base_var_name)\n\t"),
+  #     "}\n\n"
+  #   )
+  #   
+  #   if (sim) {
+  #     # Sample from the mixture components
+  #     r_code_middle <- paste0("mix_dist_out[", line$loop_variable,"] <- ",
+  #                             line$lse_argument,
+  #                             "[[mix_var_name]][[",
+  #                             "sample(1:n_mix_components, 1, prob = sapply(",
+  #                             line$lse_argument,"[[mix_prob_name]], function(x) x[", line$loop_variable, "])",
+  #                             "]][", line$loop_variable, "]\n\n")
+  #   } else {
+  #     # Compute weighted average of mixture components
+  #     r_code_middle <- paste0("mix_dist_out[", line$loop_variable,"] <- sum(",
+  #                             "sapply(", line$lse_argument,"[[mix_var_name]], function(x) x[", line$loop_variable, "]) * ",
+  #                             "sapply(", line$lse_argument,"[[mix_prob_name]], function(x) x[", line$loop_variable, "])",
+  #                             ")\n\n")
+  #   }
+  #   
+  #   r_code_end <- paste0(
+  #     paste0("if(", line$loop_variable, " == ", strsplit(line$loop_range, ":")[[1]][2],") {\n\t"),
+  #     paste0("\tassign(base_var_name, mix_dist_out)\n"),
+  #     "}\n"
+  #   )
+  #   
+  #   r_code <- paste0(r_code_start, r_code_middle, r_code_end, collapse = "\n\n")
+  # }
+  
+  
+  return("#error\n\n")
+}
+
+
+
+interpret_lines <- function(line, dat, samps, sim) {
   switch(line$type,
          "declaration" = interpret_declaration(line, dat, samps),
-         "assignment" = interpret_assignment(line, dat, samps),
+         "assignment" = interpret_assignment(line),
          "operation" = interpret_operation(line, dat, samps),
-         "loop" = interpret_loop(line, dat, samps),
+         "loop" = interpret_loop(line),
          "sampling" = interpret_sampling(line, dat, samps),
+         "log_sum_exp" = interpret_lse(line, dat, samps, sim = sim),
+         "lpmf_lpdf" = interpret_lpmf_lpdf(line, dat, samps, sim = sim),
          "Unknown type")
 }
 
-# Example usage
-processed_code <- lapply(parsed_lines, interpret_lines, dat, samps)
+# code for implementing and troubleshooting line types
 
-line <- parsed_lines[1,]
+# #declarations
+# dcls <- parsed_lines[parsed_lines$type == "declaration",]
+# sapply(1:nrow(dcls), function(i) cbind(dcls$line[i], dcls$block_name[i], interpret_declaration(dcls[i,], dat, samps)))
+# 
+# #assignments
+# asms <- parsed_lines[parsed_lines$type == "assignment",]
+# sapply(1:nrow(asms), function(i) cbind(asms$line[i], asms$block_name[i], interpret_assignment(asms[i,])))
+# 
+# #loops
+# loops <- parsed_lines[parsed_lines$type == "loop",]
+# sapply(1:nrow(loops), function(i) cbind(loops$line[i], loops$block_name[i], interpret_loop(loops[i,])))
+# 
+# #sampling statements
+# sss <- parsed_lines[parsed_lines$type == "sampling",]
+# head(sss[,!apply(apply(sss,2,is.na), 2, all)])
+# sapply(1:nrow(sss), function(i){print(i); (#cbind(sss$line[i], sss$block_name[i], 
+#   interpret_sampling(line = sss[i,], dat, samps, 
+#                      sample_index = 1, 
+#                      post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA))
+# })
+# 
+# interpret_sampling(line = sss[i,], dat, samps, 
+#                    sample_index = 1, 
+#                    post_pred_sim = F, sim = TRUE, bound_declarations = NA)
+# 
+#log prob statements
+lps <- parsed_lines[parsed_lines$type == "lpmf_lpdf",]
+head(lps[,!apply(apply(lps,2,is.na), 2, all)])
+sapply(1:nrow(lps), function(i){print(i); (#cbind(lps$line[i], lps$block_name[i],
+  interpret_lpmf_lpdf(line = lps[i,], dat, samps,
+                      sample_index = 1,
+                      post_pred_sim = F, sim = TRUE, bound_declarations = NA))
+})
+i = 2
+line <- lps[i,]
+line
+interpret_lpmf_lpdf(line = line, dat, samps,
+                    sample_index = 1,
+                    post_pred_sim = F, sim = F, bound_declarations = NA)
 
-dcls <- parsed_lines[parsed_lines$type == "declaration",]
-sapply(1:nrow(dcls), function(i) cbind(dcls$line[i], dcls$block_name[i], interpret_declaration(dcls[i,], dat, samps)))
+
+# #log-sum-exp statements
+# lses <- parsed_lines[parsed_lines$type == "log_sum_exp",]
+# line <- lses[1,]
+# 
+# cat(interpret_lse(line))
+
+#### process lines ####
+processed_code <- character(nrow(parsed_lines))
+for(i in 1:nrow(parsed_lines)){
+  processed_code[i] <- interpret_lines(line = parsed_lines[i,], dat = dat, samps = samps, sim = F)
+}
+
+#add in tabs for whitespace... need to also get newline characters handled
+processed_code <- sapply(1:length(parsed_lines$loop_depth), function(i){
+  tabs <- paste0(rep(x = "\t", times = parsed_lines$loop_depth[i]), collapse = "")
+  paste0(tabs, gsub(pattern = "\n", replacement = paste0("\n", tabs), x = processed_code[i]), collapse = "")
+})
 
 
-asms <- parsed_lines[parsed_lines$type == "assignment",]
-sapply(1:nrow(asms), function(i) cbind(asms$line[i], asms$block_name[i], interpret_assignment(asms[i,])))
+#add in block comments
+rleb <- rle(parsed_lines$block_name)
+inds_to_insert_at <- cumsum(c(0, rleb$lengths[-length(rleb$lengths)])) + 1
+inds_to_insert_at <- inds_to_insert_at + 1:length(inds_to_insert_at) - 1
+block_names_to_insert <- parsed_lines$block_name[cumsum(rleb$lengths)]
+block_names_to_insert <- paste0("#### ", block_names_to_insert, " ####")
+block_names_to_insert <- sapply(block_names_to_insert, function(x)
+  paste0(
+    "\n#", paste0(rep("~", nchar(x)-2), collapse = ""), "#\n",
+    x, "\n",
+    "#", paste0(rep("~", nchar(x)-2), collapse = ""), "#\n",
+    collapse = ""
+  )
+)
+
+for(i in 1:length(inds_to_insert_at)){
+  processed_code <- append(processed_code, block_names_to_insert[i], inds_to_insert_at[i]-1)  
+}
 
 
-loops <- parsed_lines[parsed_lines$type == "loop",]
-sapply(1:nrow(loops), function(i) cbind(loops$line[i], loops$block_name[i], interpret_loop(loops[i,])))
-
-sss <- parsed_lines[parsed_lines$type == "sampling",]
-head(sss[,!apply(apply(sss,2,is.na), 2, all)])
-sapply(1:nrow(sss), function(i){print(i); cbind(sss$line[i], sss$block_name[i], 
-                                      interpret_sampling(sss[i,], dat, samps, 
-                                                         sample_index = 1, 
-                                                         post_pred_sim = TRUE, sim = TRUE, bound_declarations = NA))
+#add in list object "out"
+newline_processed_code <- strsplit(processed_code, "\n")
+newline_processed_code <- sapply(newline_processed_code, function(lines){
+  new_lines <- sapply(lines, function(line){
+    if(grepl("<-", line) & !grepl("out\\[\\[", line)){
+      lb <- strsplit(line, " <- ")[[1]]
+      if(length(lb) == 2){
+        lhs <- lb[1]
+        rhs <- lb[2]
+        
+        if(grepl("class\\(", lhs)){
+          class_prefix <- gsub("class\\(.*", "", lhs)
+          lhs <- sub("^.*class\\(([^)]+)\\).*", "\\1", lhs)
+        }
+          
+        var_name <- sub("([^\\[$@]*)[\\[$@].*", "\\1", lhs)
+        var_subsetting <- gsub(var_name, "", lhs)
+        out_var_name <- paste0("out[[\"", var_name, "\"]]")
+        out_var_name <- gsub('\t|\n|\r', "", out_var_name)
+        out_var_name <- paste0(out_var_name, var_subsetting)
+        
+        if(grepl("class\\(", lb[1])){
+          out_var_name <- paste0("class(", out_var_name, ")")
+          lhs <- paste0(class_prefix, "class(", lhs, ")")
+        }
+        
+        new_line <- paste0(lhs, " <- ", out_var_name, " <- ", rhs)
+        return(new_line)
+        
+      } else {
+        stop("more than two components to linebreak")
+      }
+    } else {
+      return(line)
+    }
   })
+  return(paste0(new_lines, collapse = "\n"))
+  
+})
+processed_code <- c("out <- list()\n", newline_processed_code)
+
+#collapse into one line string
+processed_code <- paste0(processed_code, collapse = "\n")
+
+sink("~/test.R")
+cat(processed_code)
+sink()
