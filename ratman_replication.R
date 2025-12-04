@@ -110,6 +110,21 @@ load("~/data/smontgom/node_metadata_list.RData")
 #                               function(sex) round(sign_match[[sex]]*100, 1))
 sign_match
 
+plot(merged_results$`t30-blood-rna`$human_effect,
+     merged_results$`t30-blood-rna`$logFC)
+cor(merged_results$`t30-blood-rna`$human_effect,
+    merged_results$`t30-blood-rna`$logFC)
+
+plot(merged_results$`t56-vastus-lateralis`$human_effect,
+     merged_results$`t56-vastus-lateralis`$logFC)
+cor(merged_results$`t56-vastus-lateralis`$human_effect,
+    merged_results$`t56-vastus-lateralis`$logFC)
+
+plot(merged_results$`t55-gastrocnemius`$human_effect,
+     merged_results$`t55-gastrocnemius`$logFC)
+cor(merged_results$`t55-gastrocnemius`$human_effect,
+    merged_results$`t55-gastrocnemius`$logFC)
+
 
 #also read in the raw data?
 muscle <- read.csv(file = "~/data/smontgom/longterm_muscle.csv")

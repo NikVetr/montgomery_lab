@@ -74,4 +74,3 @@ sqrt(diag(solve(-opt_out$hessian * (n - 3) / n)))
 #bada bing bada boom you can now use these for hypothesis testing same as you would anything else
 summary(fit)$coefficients[,"Pr(>|t|)"]
 1 - abs(0.5 - pt(q = summary(fit)$coefficients[,"Estimate"] / summary(fit)$coefficients[,"Std. Error"], df = n-3)) * 2
-

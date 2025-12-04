@@ -36,9 +36,9 @@ addImg <- function(
 
 #define window size
 nchar_vert <- 30 #originally 25
-pwidth <- 3840
+pwidth <- 1920
 pwidth_in <- pwidth / 72
-pheight <- 2160
+pheight <- 1080
 pheight_in <- pheight / 72
 
 #define background string behavior
@@ -55,6 +55,7 @@ prob_glitch <- 0.02
 #FINAL WORD
 fword <- "THE MONTGOMERY LAB"
 fword <- "THE EXTRACELLULAR MATRIX"
+fword <- "THE MATRIX: CORRELATIONS"
 fword_letters <- unique(strsplit(fword, "")[[1]])
 
 #figure out string properties
@@ -98,6 +99,16 @@ current_members <- c("Nathan Abell",
                      "Rachel Ungar",
                      "Nikolai Gates Vetr"
 )
+current_members <- c(
+  "Pearson Correlation", "Covariance Matrix", "Correlation Matrix", 
+  "Correlation Coefficient", "Spearman Correlation", "Multivariate Normal", 
+  "Principal Component Analysis", "Partial Correlation", "Mutual Information", 
+  "Regression to the Mean", "Kendall Tau", "Eigensystem", "Factor Analysis", 
+  "Linear Regression", "Canonical Correlation", "Autocorrelation", 
+  "Cross-Correlation", "Distance Correlation", "Copula", 
+  "Curse of Dimensionality"
+)
+
 members <- sapply(current_members, function(name) toupper(strsplit(name, " ")[[1]][1]))
 nx_appearing <- 2 #how many times should each member's name appear?
 members <- rep(members, nx_appearing)
@@ -108,14 +119,15 @@ for(ni in 1:length(members)){
   nucs_matrix[name_topletter_rows[ni]:(name_topletter_rows[ni] + nc_members[ni] - 1), name_columns[ni]] <- rev(strsplit(members[ni], "")[[1]])
 }
 
-#change to arbitrary 
-
-codeword <- "XENOTRANSPLANTATION "
-codeword <- paste0(rev(strsplit(codeword, "")[[1]]), collapse = "")
-nucs_matrix <- matrix(rep(strsplit(codeword, "")[[1]], 
-               times = ceiling(nrow(nucs_matrix) * ncol(nucs_matrix) / nchar(codeword)))[1:(nrow(nucs_matrix) * ncol(nucs_matrix))], 
-               nrow = nrow(nucs_matrix), ncol = ncol(nucs_matrix))  
-      
+#OR change to arbitrary
+change_to_arbitrary <- F
+if(change_to_arbitrary){
+  arbitrary_word <- "XENOTRANSPLANTATION "
+  codeword <- paste0(rev(strsplit(arbitrary_word, "")[[1]]), collapse = "")
+  nucs_matrix <- matrix(rep(strsplit(codeword, "")[[1]], 
+                 times = ceiling(nrow(nucs_matrix) * ncol(nucs_matrix) / nchar(codeword)))[1:(nrow(nucs_matrix) * ncol(nucs_matrix))], 
+                 nrow = nrow(nucs_matrix), ncol = ncol(nucs_matrix))  
+}
 
 # AAs <- sample(length_poss, size = n_seqs, replace = T)
 # AAs <- sapply(AAs, function(nAA) c("ATG", sample(triplets, size = nAA, replace = T), sample(stop_codons, 1)))
@@ -250,6 +262,7 @@ h_grid_alphas <- t(replicate(n = ceiling(nf / (screen_flicker_duration_in_sec * 
 face <- png::readPNG("~/data/smontgom/matrix_stephen.png")
 face <- png::readPNG("~/data/kate_matrix.png")
 face <- png::readPNG("~/data/pig_matrix.png")
+face <- png::readPNG("~/Downloads/file.png")
 
 ## now work backwards to make the 2nd wave of strings hit when the fword letters appear ##
 fword_inds <- fword_xloc:(fword_xloc+ncfw-1)
@@ -355,8 +368,8 @@ foreach(f1=seq(1, nf, framethin), .packages = c("png")) %dopar% {
            col = grDevices::adjustcolor(1, segment_alpha))
   
   #add little cells to mimic tv screen too
-  v_alphas <- v_grid_alphas[floor(f1 / (screen_flicker_duration_in_sec * nfps)) + 1,]
-  h_alphas <- h_grid_alphas[floor(f1 / (screen_flicker_duration_in_sec * nfps)) + 1,]
+  v_alphas <- v_grid_alphas[floor((f1-1) / (screen_flicker_duration_in_sec * nfps)) + 1,]
+  h_alphas <- h_grid_alphas[floor((f1-1) / (screen_flicker_duration_in_sec * nfps)) + 1,]
   for(ri in 1:length(h_alphas)){
     rect(xleft = -1E5, xright = 1E5, ybottom = ylocs_tv[ri], ytop = ylocs_tv[ri+1], 
          col = grDevices::adjustcolor(1, alpha = h_alphas[ri]), border = NA)
@@ -391,7 +404,7 @@ if(file.exists(paste0("~/Documents/matrix_animation/", raw_filename))){file.remo
 if(file.exists(paste0("~/Documents/matrix_animation/", blur_filename))){file.remove(paste0("~/Documents/matrix_animation/", blur_filename))}
 if(file.exists(paste0("~/Documents/matrix_animation/", final_filename))){file.remove(paste0("~/Documents/matrix_animation/", final_filename))}
 
-system(paste0("cd Documents/matrix_animation; ffmpeg -r ", nfps / framethin," -f image2 -s ", pwidth, "x" , pheight," -i frames/frame_%05d.png -vcodec libx264 -crf 25 -pix_fmt yuv420p ", raw_filename))
-system(paste0("cd Documents/matrix_animation; ffmpeg -i ", raw_filename," -vf gblur=sigma=20:steps=6 -pix_fmt yuv420p ", blur_filename))
-system(paste0("cd Documents/matrix_animation; ffmpeg -i ", raw_filename," -i ", blur_filename, " -filter_complex \"blend=lighten\" ", final_filename))
+system(paste0("cd ~/Documents/matrix_animation; ffmpeg -r ", nfps / framethin," -f image2 -s ", pwidth, "x" , pheight," -i frames/frame_%05d.png -vcodec libx264 -crf 25 -pix_fmt yuv420p ", raw_filename))
+system(paste0("cd ~/Documents/matrix_animation; ffmpeg -i ", raw_filename," -vf gblur=sigma=20:steps=6 -pix_fmt yuv420p ", blur_filename))
+system(paste0("cd ~/Documents/matrix_animation; ffmpeg -i ", raw_filename," -i ", blur_filename, " -filter_complex \"blend=lighten\" ", final_filename))
 
